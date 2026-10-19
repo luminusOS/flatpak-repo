@@ -1,0 +1,88 @@
+{
+  "name": "T02 protected credential transport",
+  "on": {"workflow_dispatch": {}},
+  "permissions": {"contents": "read"},
+  "concurrency": {"group": "t02-transport-${{ github.ref }}", "cancel-in-progress": false},
+  "jobs": {
+    "checks": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 5,
+      "steps": [
+        {"uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", "with": {"ref": "${{ github.sha }}", "persist-credentials": false}},
+        {"name": "Test transport using synthetic inputs", "run": "python3 -B -m unittest discover -s tests -v"}
+      ]
+    },
+    "issuer-testing": {
+      "needs": "checks",
+      "if": "${{ github.ref == 'refs/heads/main' && github.ref_protected }}",
+      "environment": "t02-issuer-testing",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 5,
+      "steps": [
+        {"uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", "with": {"ref": "${{ github.sha }}", "persist-credentials": false}},
+        {
+          "name": "Issue and encrypt testing canary envelope",
+          "env": {"T02_PARENT_CANARY": "${{ secrets.T02_PARENT_CANARY }}", "T02_TRANSPORT_KEY": "${{ secrets.T02_TRANSPORT_KEY }}"},
+          "run": "python3 -B tools/credential_transport.py issue --channel testing --output \"$RUNNER_TEMP/capsule-testing.gpg\""
+        },
+        {"uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02", "with": {"name": "t02-envelope-testing-${{ github.run_id }}-${{ github.run_attempt }}", "path": "${{ runner.temp }}/capsule-testing.gpg", "if-no-files-found": "error", "retention-days": 1, "compression-level": 0}}
+      ]
+    },
+    "publisher-testing": {
+      "needs": "issuer-testing",
+      "if": "${{ github.ref == 'refs/heads/main' && github.ref_protected }}",
+      "environment": "t02-publisher-testing",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 5,
+      "steps": [
+        {"uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", "with": {"ref": "${{ github.sha }}", "persist-credentials": false}},
+        {"uses": "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093", "with": {"name": "t02-envelope-testing-${{ github.run_id }}-${{ github.run_attempt }}", "path": "${{ runner.temp }}/t02-testing"}},
+        {
+          "name": "Decrypt and verify testing envelope without parent access",
+          "env": {"T02_PARENT_CONTEXT_CHECK": "${{ secrets.T02_PARENT_CANARY }}", "T02_TRANSPORT_KEY": "${{ secrets.T02_TRANSPORT_KEY }}"},
+          "run": "if [ -n \"$T02_PARENT_CONTEXT_CHECK\" ]; then echo 'Parent secret unexpectedly accessible to publisher' >&2; exit 1; fi\nunset T02_PARENT_CONTEXT_CHECK\npython3 -B tools/credential_transport.py consume --channel testing --input \"$RUNNER_TEMP/t02-testing/capsule-testing.gpg\""
+        }
+      ]
+    },
+    "issuer-stable": {
+      "needs": "checks",
+      "if": "${{ github.ref == 'refs/heads/main' && github.ref_protected }}",
+      "environment": "t02-issuer-stable",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 5,
+      "steps": [
+        {"uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", "with": {"ref": "${{ github.sha }}", "persist-credentials": false}},
+        {
+          "name": "Issue and encrypt approved stable canary envelope",
+          "env": {"T02_PARENT_CANARY": "${{ secrets.T02_PARENT_CANARY }}", "T02_TRANSPORT_KEY": "${{ secrets.T02_TRANSPORT_KEY }}"},
+          "run": "python3 -B tools/credential_transport.py issue --channel stable --output \"$RUNNER_TEMP/capsule-stable.gpg\""
+        },
+        {"uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02", "with": {"name": "t02-envelope-stable-${{ github.run_id }}-${{ github.run_attempt }}", "path": "${{ runner.temp }}/capsule-stable.gpg", "if-no-files-found": "error", "retention-days": 1, "compression-level": 0}}
+      ]
+    },
+    "publisher-stable": {
+      "needs": "issuer-stable",
+      "if": "${{ github.ref == 'refs/heads/main' && github.ref_protected }}",
+      "environment": "t02-publisher-stable",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 5,
+      "steps": [
+        {"uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", "with": {"ref": "${{ github.sha }}", "persist-credentials": false}},
+        {"uses": "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093", "with": {"name": "t02-envelope-stable-${{ github.run_id }}-${{ github.run_attempt }}", "path": "${{ runner.temp }}/t02-stable"}},
+        {
+          "name": "Decrypt and verify stable envelope without parent access",
+          "env": {"T02_PARENT_CONTEXT_CHECK": "${{ secrets.T02_PARENT_CANARY }}", "T02_TRANSPORT_KEY": "${{ secrets.T02_TRANSPORT_KEY }}"},
+          "run": "if [ -n \"$T02_PARENT_CONTEXT_CHECK\" ]; then echo 'Parent secret unexpectedly accessible to publisher' >&2; exit 1; fi\nunset T02_PARENT_CONTEXT_CHECK\npython3 -B tools/credential_transport.py consume --channel stable --input \"$RUNNER_TEMP/t02-stable/capsule-stable.gpg\""
+        }
+      ]
+    },
+    "negative-ref-deployment": {
+      "needs": "checks",
+      "if": "${{ github.ref != 'refs/heads/main' }}",
+      "environment": "t02-issuer-testing",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 1,
+      "steps": [{"name": "Must never reach a runner on an untrusted ref", "run": "echo 'UNEXPECTED: untrusted ref admitted by environment protection'; exit 1"}]
+    }
+  }
+}
