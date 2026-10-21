@@ -21,6 +21,8 @@ jobs:
         run: |
           python3 -m venv .venv
           .venv/bin/python -m pip install --only-binary=:all: -r requirements-dev.txt
+      - name: Prepare disposable signing fixture root
+        run: install -d -m 700 /tmp/opencode
       - name: Check frozen artifact contracts
         run: .venv/bin/python -B -m unittest discover -s contracts -p 'test_*.py' -v
       - name: Check catalog and repository tools
