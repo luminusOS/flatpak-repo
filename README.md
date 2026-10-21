@@ -4,6 +4,9 @@ Catalog and validation tools for Luminus Flatpak distribution. `catalog.json`
 registers ZapTide and Aetheris for x86_64/aarch64 and stable/testing. Package
 publishing and the public remote are not implemented yet.
 
+The manual credential-transport workflow tests encrypted handoff between
+separate GitHub Actions jobs using synthetic secrets, without accessing R2.
+
 ## Run the tests
 
 Requires Python 3.10 or newer and GnuPG at `/usr/bin/gpg`.
