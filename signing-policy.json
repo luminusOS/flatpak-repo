@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "format": "flatpak",
+  "channels": ["stable", "testing"],
+  "reviewer_team": "luminusOS/flatpak",
+  "status": "unprovisioned",
+  "gpg_algorithm": "RSA3072-SHA256"
+}
