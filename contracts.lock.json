@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "source": {
+    "path": "docs/specs/luminus-distribution",
+    "approved": "2026-10-18"
+  },
+  "files": {
+    "distribution.schema.json": "a17635d45c5a0f0c2c51a075133f31884ce14cd1393daa20600255836732fe8a",
+    "distribution_contract.py": "c5675fa4feeb69eca43bd4c7274645a5851a417d9f01acca908535a7dfac59ab",
+    "test_distribution_contract.py": "056048dd5faf28604f88e004a7b94516a6730abba53ee0d58a5c7208212a90ff"
+  }
+}

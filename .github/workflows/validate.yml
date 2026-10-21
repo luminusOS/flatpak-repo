@@ -1,0 +1,29 @@
+name: Validate catalogs and contracts
+
+on:
+  push:
+    branches: [main, feat/t04-repository-structure]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install test dependencies
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --only-binary=:all: -r requirements-dev.txt
+      - name: Check frozen artifact contracts
+        run: .venv/bin/python -B -m unittest discover -s contracts -p 'test_*.py' -v
+      - name: Check catalog and repository tools
+        run: .venv/bin/python -B -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Validate catalog
+        run: .venv/bin/python tools/catalog.py catalog.json

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "format": "flatpak",
+  "architectures": ["x86_64", "aarch64"],
+  "channels": ["stable", "testing"],
+  "applications": [
+    {
+      "id": "dev.luminusos.ZapTide",
+      "source": {
+        "repository": "luminusOS/zaptide",
+        "workflow": ".github/workflows/release.yml"
+      }
+    },
+    {
+      "id": "org.luminusos.Aetheris",
+      "source": {
+        "repository": "luminusOS/aetheris",
+        "workflow": ".github/workflows/release-flatpak.yml"
+      }
+    }
+  ]
+}

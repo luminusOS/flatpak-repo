@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+.gnupg/
+.secrets/
+*.key
+*.pem
+*.p12
+*.flatpak
+*.rpm
+/build/
+/dist/
+/artifacts/
+/staging/
