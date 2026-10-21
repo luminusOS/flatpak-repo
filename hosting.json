@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "format": "flatpak",
+  "bucket": "luminus-flatpak",
+  "domain": "flatpak.luminusos.org",
+  "storage_class": "Standard",
+  "public_dev_url": false,
+  "min_tls": "1.2",
+  "channels": ["stable", "testing"],
+  "cache": {
+    "immutable_ttl_seconds": 31536000,
+    "mutable_cache_control": "no-store",
+    "negative_cache_ttl": -1
+  },
+  "state": "planned"
+}
