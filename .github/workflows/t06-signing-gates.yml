@@ -69,8 +69,12 @@ jobs:
         run: python3 -B tools/signing_environment.py context --role "$T06_ROLE" --channel "$T06_CHANNEL"
       - name: Prepare disposable signing fixtures
         run: install -d -m 700 /tmp/opencode
+      - name: Install test dependencies
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --only-binary=:all: -r requirements-dev.txt
       - name: Run repository tests
-        run: python3 -B -m unittest discover -s tests -p 'test_*.py' -v
+        run: .venv/bin/python -B -m unittest discover -s tests -p 'test_*.py' -v
 
   verify-disposable-canary:
     needs: authorize-dispatch

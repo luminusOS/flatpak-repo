@@ -124,6 +124,18 @@ class SigningEnvironmentTests(unittest.TestCase):
                 with self.assertRaisesRegex(AssertionError, "differs from policy"):
                     assert_dispatch_job_gate(job_id, weakened)
 
+    def test_authorize_job_installs_test_dependencies_before_running_suite(self):
+        workflow = (ROOT / ".github/workflows/t06-signing-gates.yml").read_text()
+        authorize_job = workflow_job(workflow, "authorize-dispatch")
+        venv = "python3 -m venv .venv"
+        install = ".venv/bin/python -m pip install --only-binary=:all: -r requirements-dev.txt"
+        tests = ".venv/bin/python -B -m unittest discover -s tests -p 'test_*.py' -v"
+        self.assertIn(venv, authorize_job)
+        self.assertIn(install, authorize_job)
+        self.assertIn(tests, authorize_job)
+        self.assertLess(authorize_job.index(venv), authorize_job.index(install))
+        self.assertLess(authorize_job.index(install), authorize_job.index(tests))
+
 
 if __name__ == "__main__":
     unittest.main()
