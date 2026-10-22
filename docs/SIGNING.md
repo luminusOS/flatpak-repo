@@ -12,7 +12,7 @@ From the repository root, run:
 ```sh
 python3 -B tools/signing.py validate
 python3 -B tools/signing.py rehearse
-/tmp/opencode/luminus-contract-venv/bin/python -B -m unittest discover -s tests -p 'test_*.py' -v
+.venv/bin/python -B -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
 `validate` checks the closed policy. `rehearse` creates four independent,

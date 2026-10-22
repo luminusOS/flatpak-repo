@@ -13,7 +13,7 @@ from tools import trust
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON = "/tmp/opencode/luminus-t06-venv/bin/python"
+PYTHON = sys.executable
 
 
 def run_gpg(home, *arguments):
