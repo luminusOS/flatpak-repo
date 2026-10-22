@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "format": "flatpak",
+  "status": "provisioned",
+  "max_validity_days": 400,
+  "channels": {
+    "stable": {
+      "primary_fingerprint": "79B870663A172E7CE18EB278D0CDA8E1CF84022F",
+      "signing_subkey_fingerprint": "4A5B393DF28D58201338C5665FB24E94C43CB7C0",
+      "public_key": "trust/stable.asc"
+    },
+    "testing": {
+      "primary_fingerprint": "BA35D71A9797616C5274D760913FD234CCE7DB33",
+      "signing_subkey_fingerprint": "B726B3882090DC54FED978ACE298F17A6A8CA7E4",
+      "public_key": "trust/testing.asc"
+    }
+  }
+}
