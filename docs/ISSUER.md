@@ -52,13 +52,53 @@ this repository's bucket. Do not place them in publisher environments. Stable
 issuer and publisher environments must retain their existing human approval gates.
 The publisher workflow does not consume signing keys during this synthetic check.
 
-## Limits and provisioning
+## Opt-in live scope probe
 
-The provenance check does not inspect artifact contents or independently resolve
-the tag ref to a commit; it checks the run metadata and reported `head_sha`. T08/T09
-still need authenticated cross-repository dispatch and artifact hash verification.
-No CI run has tested credentials against live R2, verified expiry during real
-publication, or demonstrated fork rejection. The synthetic SigV4 check does not
-show that an R2 request succeeds or that R2 enforces the claimed scope. A
-user-authorized provisioning step is still required to create bucket-scoped parent
-R2 API tokens and configure the four protected environments and their secrets.
+On protected-main `workflow_dispatch`, set `live_probe=true` to run
+`tools/r2_probe.py` in the publisher job after the synthetic check. It reads only
+the publisher's mode-0600 credentials file; it never receives parent keys.
+`ttl_seconds` is a choice of 600 (default) or 300. Set `expiry_check=true` only
+with 300 seconds, and target `testing` for expiry runs to avoid the stable
+environment's additional approval burden. The probe requires 120–300 seconds
+of credential lifetime at start. If less than 120 seconds remain, it exits with
+code 2 and reports `expired or nearly expired before probe; retry`; issue a new
+credential and rerun. Expiry mode completes the positive PUT, same-key conditional
+write guard, cleanup, and both final listings before waiting for expiration. After
+expiration it performs only two nonce-named conditional PUT denial checks; it does
+not attempt cleanup or listings again. Expiry proof accepts HTTP 403 with the
+T02-observed S3 denial codes (`403` or `AccessDenied`); HTTP 401 `Unauthorized`
+indicates revocation, not expiry, and fails the check. An unexpectedly successful
+post-expiry PUT fails the probe and prints its exact bucket and key in
+`expiry_residue` so an operator can remove the synthetic object manually. No
+cleanup is claimed for post-expiry residue.
+
+The matrix writes small synthetic objects only under
+`<channel>/_t07-probe/<run-id>-<attempt>/`. It checks own-prefix PUT, GET, HEAD,
+list, copy, delete, and a one-part multipart upload, plus expected HTTP 403
+denials for nonce-unique keys in the other channel and bucket, a nonce-unique
+root key, list/multipart/bucket operations, and cross-prefix copy/delete. The
+cross-prefix DELETE target is absent by construction: it contains a fresh,
+unguessable per-invocation nonce. Negative PUTs use `If-None-Match: *`; any
+unexpectedly created object is tracked by exact bucket and key for best-effort
+cleanup; any remaining keys are printed in the stdout `residue` list. Before any
+negative tests, a same-key conditional PUT must return HTTP 412, proving the
+precondition protects an existing probe-owned key. No prefix-wide deletes are
+used. Final object and bounded multipart
+listings must both succeed and be empty. Stdout is one JSON report; the step summary is
+sanitized to operation names, expected/observed status, and pass/fail. Neither
+contains credentials, signatures, authorization headers, or object contents.
+T02 observed HTTP 403 for denied prefix accesses and successfully exercised a
+5-second credential TTL; HTTP 404 is not accepted as evidence of isolation.
+
+This opt-in test is not package publication, package/signature validation,
+edge-cache coverage, revocation proof, or proof against a compromised runner.
+The provenance check still does not inspect artifact contents or independently
+resolve the tag ref to a commit; T08/T09 need authenticated cross-repository
+dispatch and artifact hash verification.
+
+## Rotation
+
+The parent R2 tokens expire on **2027-10-20**. Before then, recreate bucket-scoped
+parent tokens and update `R2_PARENT_ACCESS_KEY_ID` and
+`R2_PARENT_SECRET_ACCESS_KEY` in each `issuer-*` environment. Keep publisher
+environments parent-key-free.

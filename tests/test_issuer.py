@@ -451,7 +451,7 @@ class IssuerTests(unittest.TestCase):
         self.assertIn("${{ inputs.channel }}", workflow["concurrency"]["group"])
         self.assertEqual(set(workflow["on"]["workflow_dispatch"]["inputs"]),
                          {"channel", "package_id", "version", "git_sha", "source_run_id",
-                          "source_run_attempt"})
+                          "source_run_attempt", "live_probe", "ttl_seconds", "expiry_check"})
         self.assertEqual(workflow["on"]["workflow_dispatch"]["inputs"]["source_run_attempt"],
                          {"description": "Source workflow run attempt", "required": True,
                           "type": "string"})
@@ -470,6 +470,7 @@ class IssuerTests(unittest.TestCase):
                     self.assertNotIn("repository", step.get("with", {}))
                 self.assertNotIn("GITHUB_OUTPUT", step.get("run", ""))
                 self.assertNotIn("set -x", step.get("run", ""))
+                self.assertNotIn("${{ inputs.", step.get("run", ""))
             self.assertNotIn("outputs", job)
         uploads = [step for job in workflow["jobs"].values() for step in job["steps"]
                    if step.get("uses", "").startswith("actions/upload-artifact@")]
@@ -494,6 +495,28 @@ class IssuerTests(unittest.TestCase):
                 if role == "publisher":
                     self.assertNotIn("GITHUB_TOKEN", json.dumps(job))
         self.assertEqual(workflow["on"]["workflow_dispatch"]["inputs"]["channel"]["type"], "choice")
+        inputs = workflow["on"]["workflow_dispatch"]["inputs"]
+        self.assertEqual(inputs["live_probe"]["type"], "boolean")
+        self.assertFalse(inputs["live_probe"]["default"])
+        self.assertEqual(inputs["ttl_seconds"]["options"], ["300", "600"])
+        self.assertEqual(inputs["expiry_check"]["type"], "boolean")
+        for channel in ("stable", "testing"):
+            issuer_steps = workflow["jobs"][f"issuer-{channel}"]["steps"]
+            issue = next(step for step in issuer_steps if step.get("name", "").startswith("Issue and encrypt"))
+            self.assertIn("${{ inputs.ttl_seconds }}", json.dumps(issue))
+            self.assertIn("inputs.expiry_check", json.dumps(issue))
+            self.assertIn('!= "300"', issue["run"])
+            publisher = workflow["jobs"][f"publisher-{channel}"]
+            probe_steps = [step for step in publisher["steps"] if step.get("name") == "Run live R2 scope probe"]
+            self.assertEqual(len(probe_steps), 1)
+            self.assertEqual(probe_steps[0]["if"], "${{ inputs.live_probe }}")
+            serialized_probe = json.dumps(probe_steps[0])
+            self.assertIn("$RUNNER_TEMP/t07-credentials.json", serialized_probe)
+            self.assertNotIn("secrets.", serialized_probe)
+            self.assertIn("inputs.expiry_check", serialized_probe)
+            self.assertEqual(probe_steps[0]["env"]["RELEASE_EXPIRY_CHECK"], "${{ inputs.expiry_check }}")
+            self.assertIn('= "true"', probe_steps[0]["run"])
+            self.assertIn("always()", json.dumps(publisher["steps"]))
 
 
 if __name__ == "__main__":
