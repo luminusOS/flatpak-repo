@@ -15,14 +15,22 @@ workflow. ZapTide uses `luminusOS/zaptide` and
 `.github/workflows/ci.yml`. ZapTide and Sirius run their contract workflows
 directly. Aetheris records the caller `.github/workflows/release.yml`, so the issuer
 requires `referenced_workflows` to identify
-`luminusOS/aetheris/.github/workflows/release-flatpak.yml` with the descriptor SHA.
-The run must be completed successfully, its ID and caller workflow path must match
-exactly, including `@refs/tags/<tag>`; branch refs are rejected. The run's
-`head_sha`, tag, and version must match the descriptor and contract. A `-rc.N`
-version is accepted only for `testing`.
+`luminusOS/aetheris/.github/workflows/release-flatpak.yml` with the descriptor SHA
+and `refs/tags/<tag>` ref.
+The run object must be completed successfully, its ID and caller workflow path must
+match exactly, and its `head_sha`, tag, and version must match the descriptor and
+contract. The caller workflow `path` is the workflow filename only; an earlier
+assumption that GitHub appended `@refs/tags/<tag>` was wrong and was corrected after
+the first real dispatch failed provenance verification. Since `head_branch` alone
+does not distinguish a tag from a same-named branch, the issuer also reads the
+repository's Git tag ref and verifies that it points to the descriptor commit. For
+annotated tags it reads the tag object once and requires that object to point directly
+to the same commit; nested annotated tags are rejected. A `-rc.N` version is accepted
+only for `testing`.
 The required positive `source_run_attempt` input must match the API response and is
 recorded in the capsule descriptor. The issuer step uses the built-in `GITHUB_TOKEN`
-only to read these public run records; workflow permissions remain `contents: read`.
+only to read these public run and tag records; workflow permissions remain
+`contents: read`.
 
 GPG symmetric encryption carries credentials in a capsule bound to this repository,
 issuer run ID and attempt, workflow SHA, ref, and channel. Its nonce is not a
@@ -92,9 +100,9 @@ T02 observed HTTP 403 for denied prefix accesses and successfully exercised a
 
 This opt-in test is not package publication, package/signature validation,
 edge-cache coverage, revocation proof, or proof against a compromised runner.
-The provenance check still does not inspect artifact contents or independently
-resolve the tag ref to a commit; T08/T09 need authenticated cross-repository
-dispatch and artifact hash verification.
+The provenance check verifies the run object and independently resolves its tag ref
+to the descriptor commit, but does not inspect artifact contents; T08/T09 need
+authenticated cross-repository dispatch and artifact hash verification.
 
 ## Rotation
 
