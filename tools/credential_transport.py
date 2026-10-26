@@ -149,7 +149,7 @@ def ensure_publisher_has_no_parent_canary(environ=None):
 
 def _require_hex_secret(value, name):
     if not isinstance(value, str) or not _HEX_64.fullmatch(value):
-        raise TransportError(f"{name} must be a 64-character hexadecimal secret")
+        raise TransportError("Secret must be a 64-character hexadecimal value")
 
 
 def _transport_key(value):

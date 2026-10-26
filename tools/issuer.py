@@ -169,11 +169,25 @@ class _NoRedirect(urllib_request.HTTPRedirectHandler):
         return None
 
 
-def fetch_source_run(repository, run_id, token=None, opener=None):
+def fetch_github_json(path, token=None, opener=None):
     allowed_repositories = {entry[0] for entry in SOURCE_RELEASES.values()}
-    if repository not in allowed_repositories or not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id):
+    allowed_path = False
+    if isinstance(path, str):
+        for repository in allowed_repositories:
+            prefix = f"/repos/{repository}/"
+            endpoint = path.removeprefix(prefix) if path.startswith(prefix) else None
+            if endpoint is None:
+                continue
+            if endpoint.startswith("actions/runs/"):
+                allowed_path = bool(_RUN_ID.fullmatch(endpoint.removeprefix("actions/runs/")))
+            elif endpoint.startswith("git/ref/tags/"):
+                allowed_path = bool(_TAG.fullmatch(endpoint.removeprefix("git/ref/tags/")))
+            elif endpoint.startswith("git/tags/"):
+                allowed_path = bool(_SHA.fullmatch(endpoint.removeprefix("git/tags/")))
+            break
+    if not allowed_path:
         raise IssuerError("Source run request is invalid")
-    url = f"https://{GITHUB_API_HOST}/repos/{repository}/actions/runs/{run_id}"
+    url = f"https://{GITHUB_API_HOST}{path}"
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": GITHUB_API_VERSION,
@@ -211,6 +225,10 @@ def fetch_source_run(repository, run_id, token=None, opener=None):
     return result
 
 
+def fetch_source_run(repository, run_id, token=None, opener=None):
+    return fetch_github_json(f"/repos/{repository}/actions/runs/{run_id}", token, opener)
+
+
 def _version_from_tag(tag):
     if not isinstance(tag, str):
         raise IssuerError("Source run provenance is invalid")
@@ -226,15 +244,21 @@ def _version_from_tag(tag):
 def verify_source_run(descriptor, package_format=FORMAT, channel=None, fetcher=None, token=None):
     validated = validate_descriptor(descriptor, package_format, channel)
     repository, caller_workflow, contract_workflow, _ = SOURCE_RELEASES[validated["package_id"]]
-    lookup = fetch_source_run if fetcher is None else fetcher
+    def get_json(path):
+        try:
+            result = fetcher(path, token) if fetcher is not None else fetch_github_json(path, token)
+        except IssuerError:
+            raise
+        except Exception:
+            raise IssuerError("Source run lookup failed") from None
+        if not isinstance(result, dict):
+            raise IssuerError("Source run response is invalid")
+        return result
+
     try:
-        run = lookup(repository, validated["source_run_id"], token)
+        run = get_json(f"/repos/{repository}/actions/runs/{validated['source_run_id']}")
     except IssuerError:
         raise
-    except Exception:
-        raise IssuerError("Source run lookup failed") from None
-    if not isinstance(run, dict):
-        raise IssuerError("Source run response is invalid")
     repository_info = run.get("repository")
     if (not isinstance(repository_info, dict) or repository_info.get("full_name") != repository
             or type(run.get("id")) is not int or run["id"] != int(validated["source_run_id"])
@@ -246,8 +270,8 @@ def verify_source_run(descriptor, package_format=FORMAT, channel=None, fetcher=N
         raise IssuerError("Source run provenance is invalid")
     head_branch = run.get("head_branch")
     version = _version_from_tag(head_branch)
-    expected_run_path = f"{caller_workflow}@refs/tags/{head_branch}"
-    if version != validated["version"] or run.get("path") != expected_run_path:
+    tag_ref = f"refs/tags/{head_branch}"
+    if version != validated["version"] or run.get("path") != caller_workflow:
         raise IssuerError("Source run version is invalid")
     attempt = run.get("run_attempt")
     if type(attempt) is not int or attempt < 1 or attempt != validated["source_run_attempt"]:
@@ -258,15 +282,34 @@ def verify_source_run(descriptor, package_format=FORMAT, channel=None, fetcher=N
         matches = (isinstance(referenced, list) and any(
             isinstance(item, dict)
             and isinstance(item.get("path"), str)
-            and item["path"].partition("@")[0] == expected_reusable_path
-            and bool(item["path"].partition("@")[2])
+            and item["path"] == f"{expected_reusable_path}@{validated['git_sha']}"
             and isinstance(item.get("sha"), str)
             and _SHA.fullmatch(item["sha"])
             and item["sha"].lower() == validated["git_sha"]
+            and item.get("ref") == tag_ref
             for item in referenced
         ))
         if not matches:
             raise IssuerError("Source reusable workflow provenance is invalid")
+
+    tag_path = f"/repos/{repository}/git/ref/tags/{head_branch}"
+    ref = get_json(tag_path)
+    tag_object = ref.get("object")
+    if ref.get("ref") != tag_ref or not isinstance(tag_object, dict):
+        raise IssuerError("Source tag provenance is invalid")
+    object_type, object_sha = tag_object.get("type"), tag_object.get("sha")
+    if not isinstance(object_sha, str) or not _SHA.fullmatch(object_sha):
+        raise IssuerError("Source tag provenance is invalid")
+    if object_type == "tag":
+        tag_object = get_json(f"/repos/{repository}/git/tags/{object_sha}").get("object")
+        if not isinstance(tag_object, dict) or tag_object.get("type") != "commit":
+            raise IssuerError("Source tag provenance is invalid")
+        object_sha = tag_object.get("sha")
+    elif object_type != "commit":
+        raise IssuerError("Source tag provenance is invalid")
+    if (not isinstance(object_sha, str) or not _SHA.fullmatch(object_sha)
+            or object_sha.lower() != validated["git_sha"]):
+        raise IssuerError("Source tag provenance is invalid")
     return validated
 
 
@@ -472,7 +515,10 @@ def run_cli(argv=None, environ=None, fetcher=None):
             write_private_file(args.output, encode_envelope(envelope["payload"]))
             sigv4_self_test(envelope["payload"], args.channel)
         return 0
-    except (IssuerError, transport.TransportError, OSError, ValueError):
+    except (IssuerError, transport.TransportError) as error:
+        print(f"credential issuer failed; {error}", file=sys.stderr)
+        return 1
+    except (OSError, ValueError):
         print("credential issuer failed; details suppressed", file=sys.stderr)
         return 1
 

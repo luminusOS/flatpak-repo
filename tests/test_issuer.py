@@ -1,3 +1,4 @@
+import ast
 import copy
 import hashlib
 import importlib.util
@@ -30,6 +31,39 @@ SOURCE_FIXTURES = {
     "sirius-installer": ("luminusOS/sirius", ".github/workflows/ci.yml",
                           ".github/workflows/ci.yml", "rpm"),
 }
+REAL_SOURCE_RUNS = {
+    "dev.luminusos.ZapTide": {
+        "id": 40045135138, "event": "push", "head_branch": "v0.7.3",
+        "head_sha": "8f1ac14f366f52b86389961ce82ceb7898ee75b7",
+        "path": ".github/workflows/release.yml", "run_attempt": 1,
+        "status": "completed", "conclusion": "success",
+        "repository": {"full_name": "luminusOS/zaptide"},
+        "referenced_workflows": [
+            {"path": "luminusOS/zaptide/.github/workflows/release-appimage.yml@8f1ac14f366f52b86389961ce82ceb7898ee75b7",
+             "ref": "refs/tags/v0.7.3", "sha": "8f1ac14f366f52b86389961ce82ceb7898ee75b7"},
+            {"path": "luminusOS/zaptide/.github/workflows/ci.yml@8f1ac14f366f52b86389961ce82ceb7898ee75b7",
+             "ref": "refs/tags/v0.7.3", "sha": "8f1ac14f366f52b86389961ce82ceb7898ee75b7"},
+        ],
+    },
+    "org.luminusos.Aetheris": {
+        "id": 32636733386, "event": "push", "head_branch": "v1.5.0",
+        "head_sha": "b3ac2820bdf2bb11dbf4a4639d9a962f96630c33",
+        "path": ".github/workflows/release.yml", "run_attempt": 1,
+        "status": "completed", "conclusion": "success",
+        "repository": {"full_name": "luminusOS/aetheris"},
+        "referenced_workflows": [
+            {"path": "luminusOS/aetheris/.github/workflows/release-flatpak.yml@b3ac2820bdf2bb11dbf4a4639d9a962f96630c33",
+             "ref": "refs/tags/v1.5.0", "sha": "b3ac2820bdf2bb11dbf4a4639d9a962f96630c33"},
+        ],
+    },
+    "sirius-installer": {
+        "id": 35161979157, "event": "push", "head_branch": "v1.0.4",
+        "head_sha": "a" * 40, "path": ".github/workflows/ci.yml",
+        "run_attempt": 1, "status": "completed", "conclusion": "success",
+        "repository": {"full_name": "luminusOS/sirius"},
+        "referenced_workflows": [],
+    },
+}
 
 
 def source_run(descriptor, **changes):
@@ -38,7 +72,7 @@ def source_run(descriptor, **changes):
     data = {
         "repository": {"full_name": repository},
         "id": int(descriptor["source_run_id"]),
-        "path": caller_workflow + "@refs/tags/" + head_branch,
+        "path": caller_workflow,
         "status": "completed",
         "conclusion": "success",
         "head_sha": descriptor["git_sha"].lower(),
@@ -48,8 +82,9 @@ def source_run(descriptor, **changes):
     }
     if caller_workflow != contract_workflow:
         data["referenced_workflows"] = [{
-            "path": f"{repository}/{contract_workflow}@refs/tags/{head_branch}",
+            "path": f"{repository}/{contract_workflow}@{descriptor['git_sha'].lower()}",
             "sha": descriptor["git_sha"].lower(),
+            "ref": f"refs/tags/{head_branch}",
         }]
     data.update(changes)
     return data
@@ -81,13 +116,26 @@ class IssuerTests(unittest.TestCase):
             "source_run_attempt": 4,
         }
 
-    def fake_fetcher(self, run=None):
+    def fake_fetcher(self, run=None, tag_ref=None, tag_object=None):
         response = source_run(self.descriptor) if run is None else run
         calls = []
 
-        def fetcher(repository, run_id, token=None):
-            calls.append((repository, run_id, token))
-            return response
+        def fetcher(path, token=None):
+            calls.append((path, token))
+            if "/actions/runs/" in path:
+                return response
+            if "/git/ref/tags/" in path:
+                if isinstance(tag_ref, BaseException):
+                    if isinstance(tag_ref, HTTPError):
+                        tag_ref.close()
+                    raise tag_ref
+                return tag_ref if tag_ref is not None else {
+                    "ref": f"refs/tags/{response['head_branch']}", "object": {
+                        "type": "commit", "sha": response["head_sha"]}}
+            if "/git/tags/" in path:
+                return tag_object if tag_object is not None else {"object": {
+                    "type": "commit", "sha": response["head_sha"]}}
+            raise AssertionError(path)
 
         return fetcher, calls
 
@@ -95,16 +143,21 @@ class IssuerTests(unittest.TestCase):
         allowed = [(app, details) for app, details in SOURCE_FIXTURES.items()
                    if details[3] == issuer.FORMAT]
         for app, (repository, caller_workflow, contract_workflow, _) in allowed:
-            descriptor = {**self.descriptor, "package_id": app}
-            run = source_run(descriptor)
+            run = copy.deepcopy(REAL_SOURCE_RUNS[app])
+            descriptor = {**self.descriptor, "package_id": app,
+                          "source_run_id": str(run["id"]),
+                          "source_run_attempt": run.get("run_attempt", 1),
+                          "git_sha": run["head_sha"],
+                          "version": run["head_branch"].removeprefix("v")}
             fetcher, calls = self.fake_fetcher(run)
             verified = issuer.verify_source_run(descriptor, issuer.FORMAT, "stable", fetcher)
             self.assertEqual(verified["source_run_attempt"], descriptor["source_run_attempt"])
-            self.assertEqual(calls, [(repository, descriptor["source_run_id"], None)])
-            self.assertEqual(run["path"].split("@", 1)[0], caller_workflow)
+            self.assertEqual(calls[0], (f"/repos/{repository}/actions/runs/{descriptor['source_run_id']}", None))
+            self.assertEqual(calls[1][0], f"/repos/{repository}/git/ref/tags/{run['head_branch']}")
+            self.assertEqual(run["path"], caller_workflow)
             if caller_workflow != contract_workflow:
-                self.assertEqual(run["referenced_workflows"][0]["path"].split("@", 1)[0],
-                                 f"{repository}/{contract_workflow}")
+                self.assertEqual(run["referenced_workflows"][0]["path"],
+                                 f"{repository}/{contract_workflow}@{descriptor['git_sha']}")
             credentials = issuer.derive_credentials("a" * 32, "b" * 64,
                                                     issuer.FORMAT, "stable", now=1700000000)
             envelope = issuer.build_envelope(self.binding, verified, credentials, now=1700000000)
@@ -118,29 +171,66 @@ class IssuerTests(unittest.TestCase):
         invalid_references = (
             [],
             [{"path": "luminusOS/other/.github/workflows/release-flatpak.yml@refs/tags/v1.2.3",
-              "sha": descriptor["git_sha"]}],
+              "sha": descriptor["git_sha"], "ref": "refs/tags/v1.2.3"}],
             [{"path": "luminusOS/aetheris/.github/workflows/release-flatpak.yml@refs/tags/v1.2.3",
-              "sha": "c" * 40}],
+              "sha": "c" * 40, "ref": "refs/tags/v1.2.3"}],
+            [{"path": f"luminusOS/aetheris/.github/workflows/release-flatpak.yml@{descriptor['git_sha']}",
+              "sha": descriptor["git_sha"], "ref": "refs/tags/v9.9.9"}],
         )
         for references in invalid_references:
             fetcher, _ = self.fake_fetcher({**valid_run, "referenced_workflows": references})
             with self.subTest(references=references), self.assertRaises(issuer.IssuerError):
                 issuer.verify_source_run(descriptor, "flatpak", "stable", fetcher)
 
-    def test_tag_run_path_accepts_tag_ref_and_rejects_version_named_branch_ref(self):
+    def test_real_run_path_uses_caller_workflow_and_tag_ref_proves_tag(self):
         run = source_run(self.descriptor)
         fetcher, _ = self.fake_fetcher(run)
         self.assertEqual(issuer.verify_source_run(self.descriptor, issuer.FORMAT, "stable", fetcher),
                          self.descriptor)
-        branch_run = {**run, "path": run["path"].split("@", 1)[0] + "@refs/heads/v1.2.3"}
-        fetcher, _ = self.fake_fetcher(branch_run)
+        branch_named_tag = {**run, "head_branch": "v1.2.3"}
+        fetcher, _ = self.fake_fetcher(branch_named_tag, tag_ref={})
         with self.assertRaises(issuer.IssuerError):
             issuer.verify_source_run(self.descriptor, issuer.FORMAT, "stable", fetcher)
+
+    def test_tag_ref_requires_matching_commit_and_accepts_one_level_annotated_tag(self):
+        fetcher, calls = self.fake_fetcher(tag_ref={"ref": "refs/tags/v1.2.3", "object": {
+            "type": "tag", "sha": "d" * 40}}, tag_object={"object": {
+                "type": "commit", "sha": self.descriptor["git_sha"]}})
+        issuer.verify_source_run(self.descriptor, issuer.FORMAT, "stable", fetcher, token="fake-token")
+        self.assertEqual(calls[2][0], f"/repos/{SOURCE_FIXTURES[self.descriptor['package_id']][0]}/git/tags/" + "d" * 40)
+        self.assertEqual([token for _, token in calls], ["fake-token"] * 3)
+
+    def test_tag_ref_rejects_other_commit_nested_tag_and_wrong_annotated_commit(self):
+        cases = (
+            ({"ref": "refs/tags/v1.2.3", "object": {"type": "commit", "sha": "c" * 40}}, None),
+            ({"ref": "refs/tags/v1.2.3", "object": {"type": "tag", "sha": "d" * 40}},
+             {"object": {"type": "tag", "sha": "e" * 40}}),
+            ({"ref": "refs/tags/v1.2.3", "object": {"type": "tag", "sha": "d" * 40}},
+             {"object": {"type": "commit", "sha": "c" * 40}}),
+        )
+        for ref, tag in cases:
+            fetcher, _ = self.fake_fetcher(tag_ref=ref, tag_object=tag)
+            with self.subTest(ref=ref, tag=tag), self.assertRaises(issuer.IssuerError):
+                issuer.verify_source_run(self.descriptor, issuer.FORMAT, "stable", fetcher)
+
+    def test_caller_workflow_path_must_not_include_tag_suffix(self):
+        run = source_run(self.descriptor, path=SOURCE_FIXTURES[self.descriptor["package_id"]][1]
+                         + "@refs/tags/v1.2.3")
+        fetcher, _ = self.fake_fetcher(run)
+        with self.assertRaises(issuer.IssuerError):
+            issuer.verify_source_run(self.descriptor, issuer.FORMAT, "stable", fetcher)
+
+    def test_missing_tag_ref_http_404_is_a_lookup_failure(self):
+        missing = HTTPError("https://api.github.com/private", 404, "not found", {}, BytesIO())
+        fetcher, _ = self.fake_fetcher(tag_ref=missing)
+        with self.assertRaises(issuer.IssuerError) as caught:
+            issuer.verify_source_run(self.descriptor, issuer.FORMAT, "stable", fetcher)
+        self.assertEqual(str(caught.exception), "Source run lookup failed")
 
     def test_source_run_rejects_wrong_repository_workflow_state_conclusion_sha_event_and_id(self):
         invalid_runs = (
             {"repository": {"full_name": "luminusOS/other"}},
-            {"path": ".github/workflows/other.yml@refs/tags/v1.2.3"},
+            {"path": ".github/workflows/other.yml"},
             {"status": "in_progress"},
             {"conclusion": "failure"},
             {"conclusion": "cancelled"},
@@ -162,7 +252,7 @@ class IssuerTests(unittest.TestCase):
                          descriptor["git_sha"].lower())
         descriptor.update(version="1.2.3-rc.2", channel="testing")
         run = source_run(descriptor, head_branch="v1.2.3-rc2",
-                         path=SOURCE_FIXTURES[descriptor["package_id"]][1] + "@refs/tags/v1.2.3-rc2")
+            path=SOURCE_FIXTURES[descriptor["package_id"]][1])
         fetcher, _ = self.fake_fetcher(run)
         verified = issuer.verify_source_run(descriptor, issuer.FORMAT, "testing", fetcher)
         self.assertEqual(verified["version"], "1.2.3-rc.2")
@@ -174,7 +264,7 @@ class IssuerTests(unittest.TestCase):
             issuer.verify_source_run(self.descriptor, issuer.FORMAT, "stable", fetcher)
         rc_descriptor = {**self.descriptor, "version": "1.2.3-rc.1"}
         run = source_run(rc_descriptor, head_branch="v1.2.3-rc1",
-                         path=SOURCE_FIXTURES[rc_descriptor["package_id"]][1] + "@refs/tags/v1.2.3-rc1")
+                          path=SOURCE_FIXTURES[rc_descriptor["package_id"]][1])
         fetcher, _ = self.fake_fetcher(run)
         with self.assertRaises(issuer.IssuerError):
             issuer.verify_source_run(rc_descriptor, issuer.FORMAT, "stable", fetcher)
@@ -241,6 +331,34 @@ class IssuerTests(unittest.TestCase):
         self.assertEqual(opener.request.get_header("Accept"), "application/vnd.github+json")
         self.assertEqual(opener.request.get_header("X-github-api-version"), "2022-11-28")
         self.assertEqual(opener.request.get_header("Authorization"), "Bearer fake-token")
+
+    def test_generic_github_fetcher_allows_only_release_read_paths(self):
+        body = json.dumps({"ref": "refs/tags/v1.2.3", "object": {
+            "type": "commit", "sha": "b" * 40}}).encode()
+
+        class Opener:
+            def open(self, request, timeout):
+                self.request = request
+                return FakeResponse(body)
+
+        opener = Opener()
+        result = issuer.fetch_github_json("/repos/luminusOS/zaptide/git/ref/tags/v1.2.3",
+                                          token="fake-token", opener=opener)
+        self.assertEqual(result["ref"], "refs/tags/v1.2.3")
+        self.assertEqual(opener.request.full_url,
+                         "https://api.github.com/repos/luminusOS/zaptide/git/ref/tags/v1.2.3")
+        for path in ("/repos/luminusOS/other/git/ref/tags/v1.2.3",
+                     "/repos/luminusOS/zaptide/git/ref/tags/../bad",
+                     "/repos/luminusOS/zaptide/actions/runs/0"):
+            with self.subTest(path=path), self.assertRaises(issuer.IssuerError):
+                issuer.fetch_github_json(path, opener=opener)
+        class MissingTagOpener:
+            def open(self, request, timeout):
+                raise HTTPError(request.full_url, 404, "missing", {}, BytesIO())
+
+        with self.assertRaises(issuer.IssuerError):
+            issuer.fetch_github_json("/repos/luminusOS/zaptide/git/ref/tags/v1.2.3",
+                                     opener=MissingTagOpener())
 
     def test_github_fetcher_refuses_redirects_and_does_not_follow_them(self):
         handler = issuer._NoRedirect()
@@ -440,6 +558,39 @@ class IssuerTests(unittest.TestCase):
         for canary in (parent_id, parent_secret):
             self.assertNotIn(canary, stdout.getvalue())
             self.assertNotIn(canary, stderr.getvalue())
+        self.assertIn("credential issuer failed; Parent secret is invalid", stderr.getvalue())
+
+    def test_error_raise_sites_use_static_messages(self):
+        for filename in ("issuer.py", "credential_transport.py"):
+            tree = ast.parse((ROOT / "tools" / filename).read_text())
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Raise) or not isinstance(node.exc, ast.Call):
+                    continue
+                func = node.exc.func
+                if not isinstance(func, ast.Name) or func.id not in ("IssuerError", "TransportError"):
+                    continue
+                with self.subTest(filename=filename, line=node.lineno):
+                    self.assertTrue(node.exc.args)
+                    message = node.exc.args[0]
+                    self.assertIsInstance(message, ast.Constant)
+                    self.assertIsInstance(message.value, str)
+
+    def test_cli_prints_static_transport_error_text(self):
+        environment = {
+            "GITHUB_REPOSITORY": "luminusOS/flatpak-repo", "GITHUB_RUN_ID": "12345",
+            "GITHUB_RUN_ATTEMPT": "2", "GITHUB_SHA": "a" * 40,
+            "GITHUB_REF": "refs/heads/main", "TRANSPORT_KEY": "canary-invalid-key",
+        }
+        stderr = StringIO()
+        with tempfile.TemporaryDirectory() as directory, redirect_stderr(stderr):
+            result = issuer.run_cli([
+                "consume", "--channel", "stable", "--input", str(Path(directory, "in")),
+                "--output", str(Path(directory, "out")),
+            ], environment)
+        self.assertEqual(result, 1)
+        self.assertIn("credential issuer failed; Secret must be a 64-character hexadecimal value",
+                      stderr.getvalue())
+        self.assertNotIn("canary-invalid-key", stderr.getvalue())
 
     def test_workflow_is_dispatch_only_and_secrets_are_role_scoped(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/issue-credentials.yml").read_text())
