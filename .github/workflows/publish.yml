@@ -1,0 +1,301 @@
+name: Publish Flatpak release
+"on":
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Target repository channel
+        required: true
+        type: choice
+        options: [stable, testing]
+      package_id:
+        description: Allowlisted application ID
+        required: true
+        type: choice
+        options: [dev.luminusos.ZapTide, org.luminusos.Aetheris]
+      version:
+        description: Normalized release version
+        required: true
+        type: string
+      tag:
+        description: Exact source release tag
+        required: true
+        type: string
+      git_sha:
+        description: Source commit SHA
+        required: true
+        type: string
+      source_run_id:
+        description: Successful source workflow run ID
+        required: true
+        type: string
+      source_run_attempt:
+        description: Source workflow run attempt
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: flatpak-publish-${{ inputs.channel }}
+  cancel-in-progress: false
+jobs:
+  checks:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'luminusOS/flatpak-repo' && github.ref == 'refs/heads/main' && github.ref_protected }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Install test dependencies
+        run: |
+          python3 -m venv /tmp/opencode/luminus-t09-venv
+          /tmp/opencode/luminus-t09-venv/bin/python -m pip install --only-binary=:all: -r requirements-dev.txt
+      - name: Run tests and contracts
+        run: /tmp/opencode/luminus-t09-venv/bin/python -B -m unittest discover -s tests -p 'test_*.py' -q && /tmp/opencode/luminus-t09-venv/bin/python -B -m unittest discover -s contracts -p 'test_*.py' -q
+  prepare:
+    needs: checks
+    if: ${{ needs.checks.result == 'success' && github.event_name == 'workflow_dispatch' && github.repository == 'luminusOS/flatpak-repo' && github.ref == 'refs/heads/main' && github.ref_protected }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Install public staging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak ostree
+          python3 -m venv /tmp/opencode/luminus-t09-venv
+          /tmp/opencode/luminus-t09-venv/bin/python -m pip install --only-binary=:all: -r requirements-dev.txt
+          install -d -m 700 /tmp/opencode/luminus-t09
+      - name: Write release descriptor
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          PACKAGE_ID: ${{ inputs.package_id }}
+          VERSION: ${{ inputs.version }}
+          TAG: ${{ inputs.tag }}
+          GIT_SHA: ${{ inputs.git_sha }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          value = {"format":"flatpak", "channel":os.environ["CHANNEL"], "package_id":os.environ["PACKAGE_ID"],
+                   "version":os.environ["VERSION"], "tag":os.environ["TAG"], "git_sha":os.environ["GIT_SHA"],
+                   "source_run_id":os.environ["SOURCE_RUN_ID"], "source_run_attempt":int(os.environ["SOURCE_RUN_ATTEMPT"])}
+          with open("/tmp/opencode/luminus-t09/descriptor.json", "w") as out:
+              json.dump(value, out, sort_keys=True)
+          PY
+      - name: Mirror public channel repository without credentials
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          REPO=/tmp/opencode/luminus-t09/repo
+          URL="https://flatpak.luminusos.org/$CHANNEL/"
+          STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$URL/summary")"
+          REFS_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$URL/refs/")"
+          case "$STATUS" in
+            200)
+              ostree init --repo="$REPO" --mode=archive-z2
+              ostree remote add --repo="$REPO" --gpg-import="trust/$CHANNEL.asc" \
+                --set=gpg-verify=false --set=gpg-verify-summary=true luminus-public "$URL"
+              ostree pull --repo="$REPO" --mirror luminus-public
+              curl --fail --silent --show-error "$URL/summary.detached.sig" \
+                --output "$REPO/summary.detached.sig"
+              for NAME in luminus-imports.json luminus-imports.json.sig; do
+                CODE="$(curl --silent --show-error --output "$REPO/$NAME" --write-out '%{http_code}' "$URL/$NAME")"
+                case "$CODE" in
+                  200) ;;
+                  404) rm -f "$REPO/$NAME" ;;
+                  *) exit 1 ;;
+                esac
+              done
+              ;;
+            404)
+              test "$REFS_STATUS" = 404
+              ostree init --repo="$REPO" --mode=archive-z2
+              : > /tmp/opencode/luminus-t09/first-publish
+              ;;
+            *) exit 1 ;;
+          esac
+          /tmp/opencode/luminus-t09-venv/bin/python -B -c 'import json,sys; sys.path.insert(0,"tools"); from flatpak_import import snapshot_repo; open("/tmp/opencode/luminus-t09/baseline.json","w").write(json.dumps(snapshot_repo(sys.argv[1]),sort_keys=True))' "$REPO"
+      - name: Verify release, import unsigned commits, and stage repository
+        run: |
+          EXTRA=""
+          if [ -e /tmp/opencode/luminus-t09/first-publish ]; then EXTRA="--allow-empty-repo"; fi
+          /tmp/opencode/luminus-t09-venv/bin/python -B tools/flatpak_import.py --mode prepare \
+            --descriptor /tmp/opencode/luminus-t09/descriptor.json --repo /tmp/opencode/luminus-t09/repo \
+            --baseline /tmp/opencode/luminus-t09/baseline.json --work-dir /tmp/opencode/luminus-t09 \
+            --inspected /tmp/opencode/luminus-t09/inspected.json $EXTRA
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: flatpak-stage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/opencode/luminus-t09/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+  issuer:
+    needs: prepare
+    if: ${{ needs.prepare.result == 'success' && github.event_name == 'workflow_dispatch' && github.repository == 'luminusOS/flatpak-repo' && github.ref == 'refs/heads/main' && github.ref_protected }}
+    environment: issuer-${{ inputs.channel }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify protected issuer context
+        run: python3 -B tools/signing_environment.py context --role issuer --channel "$RELEASE_CHANNEL"
+        env:
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+          T06_GITHUB_REPOSITORY: ${{ github.repository }}
+          T06_GITHUB_REF: ${{ github.ref }}
+          T06_GITHUB_REF_PROTECTED: ${{ github.ref_protected }}
+          T06_GITHUB_EVENT_NAME: ${{ github.event_name }}
+          T06_ENVIRONMENT: issuer-${{ inputs.channel }}
+      - name: Issue channel-scoped credential capsule (900-second credential TTL)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          R2_PARENT_ACCESS_KEY_ID: ${{ secrets.R2_PARENT_ACCESS_KEY_ID }}
+          R2_PARENT_SECRET_ACCESS_KEY: ${{ secrets.R2_PARENT_SECRET_ACCESS_KEY }}
+          TRANSPORT_KEY: ${{ secrets.TRANSPORT_KEY }}
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+          RELEASE_PACKAGE_ID: ${{ inputs.package_id }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_GIT_SHA: ${{ inputs.git_sha }}
+          RELEASE_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          RELEASE_SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+        run: python3 -B tools/issuer.py issue --ttl 900 --channel "$RELEASE_CHANNEL" --package-id "$RELEASE_PACKAGE_ID" --version "$RELEASE_VERSION" --git-sha "$RELEASE_GIT_SHA" --source-run-id "$RELEASE_SOURCE_RUN_ID" --source-run-attempt "$RELEASE_SOURCE_RUN_ATTEMPT" --output "$RUNNER_TEMP/r2-credentials.gpg"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: flatpak-capsule-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/r2-credentials.gpg
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+  publisher:
+    needs: issuer
+    if: ${{ needs.issuer.result == 'success' && github.event_name == 'workflow_dispatch' && github.repository == 'luminusOS/flatpak-repo' && github.ref == 'refs/heads/main' && github.ref_protected }}
+    environment: publisher-${{ inputs.channel }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: flatpak-capsule-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publish-capsule
+      - name: Consume capsule and verify publisher context
+        run: |
+          python3 -B tools/signing_environment.py context --role publisher --channel "$RELEASE_CHANNEL"
+          python3 -B tools/issuer.py consume --channel "$RELEASE_CHANNEL" --input "$RUNNER_TEMP/publish-capsule/r2-credentials.gpg" --output "$RUNNER_TEMP/r2-credentials.json"
+        env:
+          TRANSPORT_KEY: ${{ secrets.TRANSPORT_KEY }}
+          T06_GITHUB_REPOSITORY: ${{ github.repository }}
+          T06_GITHUB_REF: ${{ github.ref }}
+          T06_GITHUB_REF_PROTECTED: ${{ github.ref_protected }}
+          T06_GITHUB_EVENT_NAME: ${{ github.event_name }}
+          T06_ENVIRONMENT: publisher-${{ inputs.channel }}
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: flatpak-stage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/opencode/luminus-t09
+      - name: Install signing and upload tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak ostree gnupg
+          python3 -m venv /tmp/opencode/luminus-t09-venv
+          /tmp/opencode/luminus-t09-venv/bin/python -m pip install --only-binary=:all: -r requirements-dev.txt
+          install -d -m 700 /dev/shm/luminus-t09-gnupg
+      - name: Import signing subkey to verified tmpfs GnuPG home
+        env:
+          GNUPGHOME: /dev/shm/luminus-t09-gnupg
+          SIGNING_SUBKEY: ${{ secrets.SIGNING_SUBKEY }}
+          SIGNING_SUBKEY_PASSPHRASE: ${{ secrets.SIGNING_SUBKEY_PASSPHRASE }}
+          SIGNING_SUBKEY_FINGERPRINT: ${{ vars.SIGNING_SUBKEY_FINGERPRINT }}
+          SIGNING_PRIMARY_FINGERPRINT: ${{ vars.SIGNING_PRIMARY_FINGERPRINT }}
+        run: |
+          test "$(stat -f -c %T "$GNUPGHOME")" = tmpfs
+          chmod 700 "$GNUPGHOME"
+          printf 'allow-preset-passphrase\n' > "$GNUPGHOME/gpg-agent.conf"
+          gpgconf --launch gpg-agent
+          printf '%s' "$SIGNING_SUBKEY" | gpg --batch --import
+          python3 - <<'PY'
+          import os, subprocess
+          output = subprocess.run(["gpg", "--batch", "--with-colons", "--fingerprint", "--fingerprint",
+                                   "--list-secret-keys"], check=True, capture_output=True, text=True).stdout
+          records = []
+          current = None
+          for line in output.splitlines():
+              fields = line.split(":")
+              if fields[0] in ("sec", "sec#", "ssb", "ssb#"):
+                  current = {"kind": fields[0], "fingerprint": None}
+                  records.append(current)
+              elif fields[0] == "fpr" and current is not None and current["fingerprint"] is None:
+                  current["fingerprint"] = fields[9]
+          primary = [item for item in records if item["kind"].startswith("sec")]
+          subkeys = [item for item in records if item["kind"].startswith("ssb")]
+          if (len(primary) != 1 or primary[0]["kind"] != "sec#"
+                  or primary[0]["fingerprint"] != os.environ["SIGNING_PRIMARY_FINGERPRINT"]
+                  or len(subkeys) != 1 or subkeys[0]["kind"] != "ssb"
+                  or subkeys[0]["fingerprint"] != os.environ["SIGNING_SUBKEY_FINGERPRINT"]):
+              raise SystemExit("channel signing key material does not match its environment")
+          PY
+          KEYGRIP="$(gpg --batch --with-colons --with-keygrip --list-secret-keys "$SIGNING_SUBKEY_FINGERPRINT" | awk -F: -v fingerprint="$SIGNING_SUBKEY_FINGERPRINT" '$1 == "fpr" { selected = ($10 == fingerprint) } $1 == "grp" && selected { print $10; exit }')"
+          test -n "$KEYGRIP"
+          export KEYGRIP
+          python3 - <<'PY'
+          import os, subprocess
+          command = "PRESET_PASSPHRASE {} -1 {}\n/bye\n".format(os.environ["KEYGRIP"], os.environ["SIGNING_SUBKEY_PASSPHRASE"].encode().hex())
+          subprocess.run(["gpg-connect-agent"], input=command.encode(), check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+          PY
+          unset SIGNING_SUBKEY SIGNING_SUBKEY_PASSPHRASE KEYGRIP
+      - name: Write trusted release descriptor from the dispatch inputs
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          PACKAGE_ID: ${{ inputs.package_id }}
+          VERSION: ${{ inputs.version }}
+          TAG: ${{ inputs.tag }}
+          GIT_SHA: ${{ inputs.git_sha }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          value = {"format":"flatpak", "channel":os.environ["CHANNEL"], "package_id":os.environ["PACKAGE_ID"],
+                   "version":os.environ["VERSION"], "tag":os.environ["TAG"], "git_sha":os.environ["GIT_SHA"],
+                   "source_run_id":os.environ["SOURCE_RUN_ID"], "source_run_attempt":int(os.environ["SOURCE_RUN_ATTEMPT"])}
+          with open("/tmp/opencode/luminus-t09/descriptor.json", "w") as out:
+              json.dump(value, out, sort_keys=True)
+          PY
+      - name: Re-verify the staged repository, sign, upload, and publicly verify with scoped credentials
+        env:
+          GNUPGHOME: /dev/shm/luminus-t09-gnupg
+          SIGNING_SUBKEY_FINGERPRINT: ${{ vars.SIGNING_SUBKEY_FINGERPRINT }}
+          CREDENTIALS: ${{ runner.temp }}/r2-credentials.json
+        run: |
+          /tmp/opencode/luminus-t09-venv/bin/python -B tools/flatpak_import.py --mode publish \
+            --descriptor /tmp/opencode/luminus-t09/descriptor.json --work-dir /tmp/opencode/luminus-t09 \
+            --repo /tmp/opencode/luminus-t09/repo --baseline /tmp/opencode/luminus-t09/baseline.json \
+            --gpg-home "$GNUPGHOME" --signing-fingerprint "$SIGNING_SUBKEY_FINGERPRINT" --credentials "$CREDENTIALS"
+      - name: Remove temporary credentials and key material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/r2-credentials.json" "$RUNNER_TEMP/publish-capsule/r2-credentials.gpg"
+          gpgconf --homedir /dev/shm/luminus-t09-gnupg --kill gpg-agent || true
+          rm -rf /dev/shm/luminus-t09-gnupg /tmp/opencode/luminus-t09
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: catalog-update-${{ inputs.channel }}-${{ inputs.package_id }}-${{ inputs.version }}
+          path: catalog-update.json
+          if-no-files-found: error
+          retention-days: 30

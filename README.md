@@ -1,8 +1,10 @@
 # Luminus Flatpak repository
 
-Catalog and validation tools for Luminus Flatpak distribution. `catalog.json`
-registers ZapTide and Aetheris for x86_64/aarch64 and stable/testing. Package
-publishing and the public remote are not implemented yet.
+Catalog, validation and channel-publishing tools for Luminus Flatpak
+distribution. `catalog.json` registers ZapTide and Aetheris for
+x86_64/aarch64 and stable/testing. The manual publisher workflow imports
+verified releases and emits a channel-specific catalog update artifact after
+public verification. See [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
 The manual credential-transport workflow tests encrypted handoff between
 separate GitHub Actions jobs using synthetic secrets, without accessing R2.
