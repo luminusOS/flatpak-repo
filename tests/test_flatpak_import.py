@@ -16,6 +16,7 @@ from tools.flatpak_import import (
     inspect_bundle, merge_bundles, validate_manifest, parse_release_json, verify_artifact,
     validate_rc_channel, verify_tmpfs, verify_mirrored_repo, sign_staged_repo,
     BASE_AUTH_DIR, snapshot_base_auth, verify_stage, _version_rules, changed_files,
+    SigV4Storage, plan_upload_files, prune_unreachable, publish_repo, is_mutable_key,
 )
 
 
@@ -530,6 +531,83 @@ class RealFlatpakImportTests(unittest.TestCase):
         self.assertNotIn(".lock", names)
         self.assertNotIn("tmp/leftover", names)
         self.assertIn("config.extra-check", names)
+
+    def staged_keys(self):
+        return {"testing/" + relative: content for relative, content in changed_files(self.repo, {}).items()}
+
+    def test_upload_set_does_not_depend_on_any_artifact_supplied_baseline(self):
+        work, release, bundles = self.staged_case()
+        files = plan_upload_files(self.repo, "testing", {})
+        self.assertEqual(set(files), set(self.staged_keys()))
+
+    def test_objects_already_published_are_not_uploaded_again(self):
+        work, release, bundles = self.staged_case()
+        staged = self.staged_keys()
+        immutable = [key for key in staged if key.startswith("testing/objects/") and not is_mutable_key(key)]
+        self.assertTrue(immutable)
+        remote = {key: len(staged[key]) for key in immutable}
+        files = plan_upload_files(self.repo, "testing", remote)
+        self.assertFalse(set(files) & set(immutable))
+        self.assertIn("testing/summary", files)
+        self.assertIn("testing/luminus-imports.json", files)
+
+    def test_a_published_object_with_a_different_size_is_rejected(self):
+        work, release, bundles = self.staged_case()
+        staged = self.staged_keys()
+        key = next(key for key in staged if key.startswith("testing/objects/") and not is_mutable_key(key))
+        with self.assertRaisesRegex(ImporterError, "differs"):
+            plan_upload_files(self.repo, "testing", {key: len(staged[key]) + 1})
+
+    def test_unreachable_objects_are_pruned_before_the_upload_set_is_built(self):
+        work, release, bundles = self.staged_case()
+        self.commit_on("app/org.luminusos.Orphan/x86_64/testing", "orphan")
+        subprocess.run(["ostree", "refs", "--repo", str(self.repo), "--delete",
+                        "app/org.luminusos.Orphan/x86_64/testing"], check=True, capture_output=True)
+        before = set(changed_files(self.repo, {}))
+        prune_unreachable(self.repo)
+        after = set(changed_files(self.repo, {}))
+        self.assertTrue(before - after)
+        verify_stage(self.repo, work, release, bundles, trust_root=self.auth_trust)
+
+    def test_listing_follows_continuation_tokens_and_reads_sizes(self):
+        pages = [
+            b"<ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>t1</NextContinuationToken>"
+            b"<Contents><Key>testing/a</Key><Size>3</Size></Contents></ListBucketResult>",
+            b"<ListBucketResult><IsTruncated>false</IsTruncated>"
+            b"<Contents><Key>testing/b</Key><Size>5</Size></Contents></ListBucketResult>",
+        ]
+        queries = []
+
+        class Response:
+            status = 200
+
+            def __init__(self, body):
+                self.body = body
+
+        class Client:
+            def _request(self, method, bucket=None, key=None, query=None, **kwargs):
+                queries.append(dict(query))
+                return Response(pages[len(queries) - 1])
+
+        storage = SigV4Storage.__new__(SigV4Storage)
+        storage.bucket, storage.client = "luminus-flatpak", Client()
+        self.assertEqual(storage.list_keys("testing/"), {"testing/a": 3, "testing/b": 5})
+        self.assertNotIn("continuation-token", queries[0])
+        self.assertEqual(queries[1]["continuation-token"], "t1")
+
+    def test_listing_rejects_keys_outside_the_prefix(self):
+        class Response:
+            status = 200
+            body = b"<R><IsTruncated>false</IsTruncated><Contents><Key>stable/x</Key><Size>1</Size></Contents></R>"
+
+        class Client:
+            def _request(self, *args, **kwargs):
+                return Response()
+
+        storage = SigV4Storage.__new__(SigV4Storage)
+        storage.bucket, storage.client = "luminus-flatpak", Client()
+        with self.assertRaises(ImporterError):
+            storage.list_keys("testing/")
 
     def test_orphan_ledger_signature_is_rejected(self):
         repo, trust = self.signed_repo(ledger=False)

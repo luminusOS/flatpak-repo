@@ -57,11 +57,16 @@ refs, each at the expected commit. The staged ledger must equal the
 authenticated base ledger plus the entries for this release, the version rules
 are replayed against the authenticated ledger, top-level entries must be on an
 allowlist, and `ostree fsck` must pass. An `EMPTY` claim is accepted only if the
-public summary and refs endpoints return 404. The `baseline.json` snapshot only
-decides which files are uploaded. A forged baseline can cause missing uploads,
-which fail public verification or the next publish, but it cannot change what is
-signed. Not independently verified: the staged `config` file and unreferenced
-objects, which are not reachable from any signed ref.
+public summary and refs endpoints return 404. The upload set does not depend
+on any value from the prepare artifact: the publisher lists the channel prefix
+in R2 with its scoped credentials, uploads every immutable file that is not
+there yet, always uploads the mutable metadata last, and fails if a published
+immutable object has a different size from the staged one. Objects unreachable
+from any ref are pruned from the staged copy before signing. Not independently
+verified: the staged `config` file and prepare-generated static deltas, which
+clients check against commit checksums but which could be published as
+unneeded files. The listing permission of the scoped credentials is covered by
+the live probe only for narrower prefixes, so the first real run confirms it.
 
 After consuming the capsule, publisher imports the channel signing subkey into
 a mode-0700 GnuPG home on `/dev/shm`; it verifies the filesystem type is `tmpfs`

@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree as ElementTree
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
@@ -23,7 +24,7 @@ from contracts import distribution_contract
 import issuer
 import r2_probe
 import trust
-from publish_plan import ImportError as PublishError, build_upload_plan, publish_uploads
+from publish_plan import ImportError as PublishError, build_upload_plan, is_mutable_key, publish_uploads
 
 
 CHANNELS = ("stable", "testing")
@@ -41,6 +42,7 @@ APP_ID_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9-]*){2
 IMPORTS_LEDGER = "luminus-imports.json"
 SUMMARY_DETACHED_SIGNATURE = "summary.detached.sig"
 MUTABLE_PHASE_BUDGET_SECONDS = 120
+MAX_LIST_PAGES = 2000
 
 
 class ImporterError(Exception):
@@ -612,7 +614,7 @@ def fetch_release(descriptor, work_dir):
     return checked, bundle_paths
 
 
-def prepare_release(descriptor_path, repo, baseline_path, work_dir, *, allow_empty_repo=False):
+def prepare_release(descriptor_path, repo, work_dir, *, allow_empty_repo=False):
     descriptor = json.loads(Path(descriptor_path).read_text(encoding="utf-8"))
     verify_mirrored_repo(repo, descriptor.get("channel"),
                          allow_empty=allow_empty_repo)
@@ -678,6 +680,56 @@ class SigV4Storage:
         if response.status not in (200, 201, 204):
             raise ImporterError("R2 object upload failed")
 
+    def list_keys(self, prefix):
+        sizes = {}
+        token = None
+        for _ in range(MAX_LIST_PAGES):
+            query = {"list-type": "2", "prefix": prefix, "max-keys": "1000"}
+            if token:
+                query["continuation-token"] = token
+            response = self.client._request("GET", self.bucket, query=query)
+            if response.status != 200:
+                raise ImporterError("R2 listing failed")
+            try:
+                root = ElementTree.fromstring(response.body)
+            except ElementTree.ParseError as error:
+                raise ImporterError("R2 listing is invalid") from error
+            truncated, token = False, None
+            for element in root:
+                name = element.tag.rsplit("}", 1)[-1]
+                if name == "Contents":
+                    fields = {child.tag.rsplit("}", 1)[-1]: child.text for child in element}
+                    if not fields.get("Key", "").startswith(prefix) or not (fields.get("Size") or "").isdigit():
+                        raise ImporterError("R2 listing is invalid")
+                    sizes[fields["Key"]] = int(fields["Size"])
+                elif name == "IsTruncated":
+                    truncated = (element.text or "").strip().lower() == "true"
+                elif name == "NextContinuationToken":
+                    token = element.text
+            if not truncated:
+                return sizes
+            if not token:
+                raise ImporterError("R2 listing is invalid")
+        raise ImporterError("R2 listing is too large")
+
+
+def plan_upload_files(repo, channel, remote_sizes):
+    files = {}
+    for relative, content in changed_files(repo, {}).items():
+        key = channel + "/" + relative
+        if is_mutable_key(key):
+            files[key] = content
+        elif key in remote_sizes:
+            if remote_sizes[key] != len(content):
+                raise ImporterError("a published immutable object differs from the staged object")
+        else:
+            files[key] = content
+    return files
+
+
+def prune_unreachable(repo):
+    _run(["ostree", "prune", "--repo", str(repo), "--refs-only"], timeout=900)
+
 
 def verify_public_object(key, content):
     url = f"https://flatpak.luminusos.org/{key}"
@@ -700,18 +752,21 @@ def verify_public_object(key, content):
     return False
 
 
-def publish_repo(repo, baseline, channel, credentials_path, *, mutable_phase_budget=MUTABLE_PHASE_BUDGET_SECONDS):
+def publish_repo(repo, channel, credentials_path, *, storage=None, public_verify=None,
+                 mutable_phase_budget=MUTABLE_PHASE_BUDGET_SECONDS):
     credentials = r2_probe.load_credentials(credentials_path)
     if credentials.get("bucket") != issuer.BUCKET or credentials.get("prefix") != channel + "/":
         raise ImporterError("temporary credential scope does not match channel")
     account = "89e6fc75aed6d04cd84a0c7d11a5594e"
-    files = {channel + "/" + key: content for key, content in changed_files(repo, baseline).items()}
+    if storage is None:
+        storage = SigV4Storage(issuer.BUCKET, f"https://{account}.r2.cloudflarestorage.com", credentials)
+    verify = public_verify or verify_public_object
+    files = plan_upload_files(repo, channel, storage.list_keys(channel + "/"))
     plan = build_upload_plan(channel, files)
-    storage = SigV4Storage(issuer.BUCKET, f"https://{account}.r2.cloudflarestorage.com", credentials)
-    publish_uploads(channel, files, storage, verify_public_object,
+    publish_uploads(channel, files, storage, verify,
                     expires_at=credentials["expires_at"],
                     minimum_mutable_budget=mutable_phase_budget)
-    if not all(verify_public_object(item.key, item.content) for item in plan if item.mutable):
+    if not all(verify(item.key, item.content) for item in plan if item.mutable):
         raise ImporterError("public metadata verification failed")
     return plan
 
@@ -752,7 +807,6 @@ def main(argv=None):
     parser.add_argument("--repo", required=True)
     parser.add_argument("--gpg-home")
     parser.add_argument("--signing-fingerprint")
-    parser.add_argument("--baseline", required=True)
     parser.add_argument("--credentials")
     parser.add_argument("--work-dir", default=".")
     parser.add_argument("--inspected")
@@ -760,8 +814,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.mode == "prepare":
-            descriptor, inspected = prepare_release(args.descriptor, args.repo, args.baseline,
-                                                    args.work_dir, allow_empty_repo=args.allow_empty_repo)
+            descriptor, inspected = prepare_release(args.descriptor, args.repo, args.work_dir,
+                                                    allow_empty_repo=args.allow_empty_repo)
             if args.inspected:
                 Path(args.inspected).write_text(json.dumps(inspected, sort_keys=True, indent=2) + "\n",
                                                 encoding="utf-8")
@@ -769,9 +823,9 @@ def main(argv=None):
         descriptor = json.loads(Path(args.descriptor).read_text(encoding="utf-8"))
         checked, bundle_paths = fetch_release(descriptor, Path(args.work_dir) / "publisher-bundles")
         inspected = verify_stage(args.repo, args.work_dir, checked, bundle_paths)
+        prune_unreachable(args.repo)
         sign_staged_repo(args.repo, args.gpg_home, args.signing_fingerprint)
-        upload_plan = publish_repo(args.repo, json.loads(Path(args.baseline).read_text(encoding="utf-8")),
-                                   checked["channel"], args.credentials)
+        upload_plan = publish_repo(args.repo, checked["channel"], args.credentials)
         update = catalog_update_document(
             {key: value for key, value in checked.items() if key != "manifest_sha256"},
             inspected, upload_plan)

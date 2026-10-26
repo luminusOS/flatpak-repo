@@ -122,14 +122,13 @@ jobs:
               ;;
             *) exit 1 ;;
           esac
-          /tmp/opencode/luminus-t09-venv/bin/python -B -c 'import json,sys; sys.path.insert(0,"tools"); from flatpak_import import snapshot_repo; open("/tmp/opencode/luminus-t09/baseline.json","w").write(json.dumps(snapshot_repo(sys.argv[1]),sort_keys=True))' "$REPO"
       - name: Verify release, import unsigned commits, and stage repository
         run: |
           EXTRA=""
           if [ -e /tmp/opencode/luminus-t09/first-publish ]; then EXTRA="--allow-empty-repo"; fi
           /tmp/opencode/luminus-t09-venv/bin/python -B tools/flatpak_import.py --mode prepare \
             --descriptor /tmp/opencode/luminus-t09/descriptor.json --repo /tmp/opencode/luminus-t09/repo \
-            --baseline /tmp/opencode/luminus-t09/baseline.json --work-dir /tmp/opencode/luminus-t09 \
+            --work-dir /tmp/opencode/luminus-t09 \
             --inspected /tmp/opencode/luminus-t09/inspected.json $EXTRA
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -285,7 +284,7 @@ jobs:
         run: |
           /tmp/opencode/luminus-t09-venv/bin/python -B tools/flatpak_import.py --mode publish \
             --descriptor /tmp/opencode/luminus-t09/descriptor.json --work-dir /tmp/opencode/luminus-t09 \
-            --repo /tmp/opencode/luminus-t09/repo --baseline /tmp/opencode/luminus-t09/baseline.json \
+            --repo /tmp/opencode/luminus-t09/repo \
             --gpg-home "$GNUPGHOME" --signing-fingerprint "$SIGNING_SUBKEY_FINGERPRINT" --credentials "$CREDENTIALS"
       - name: Remove temporary credentials and key material
         if: always()
