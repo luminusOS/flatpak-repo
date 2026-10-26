@@ -173,6 +173,9 @@ def _is_empty_multipart_list(response, prefix):
                    for element in root.iter())
 
 
+EXPIRED_WRITE_CODES = ("403", "AccessDenied", "ExpiredToken", "SignatureDoesNotMatch")
+
+
 def _key(prefix, suffix):
     return prefix + suffix
 
@@ -260,7 +263,7 @@ def probe(credentials, run_id, attempt, channel, expiry_check=False, client_fact
     def expired_write(name, key):
         try:
             response = client._request("PUT", BUCKET, key, body=MARKER, headers={"If-None-Match": "*"})
-            passed = response.status == 403 and response.code in ("403", "AccessDenied")
+            passed = response.status == 403 and response.code in EXPIRED_WRITE_CODES
             report.append({"name": name, "expected": EXPECTATIONS[name][1], "observed": response.status, "pass": passed})
             if 200 <= response.status < 300:
                 expiry_residue.append({"bucket": BUCKET, "key": key})

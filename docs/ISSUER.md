@@ -110,3 +110,12 @@ The parent R2 tokens expire on **2027-10-20**. Before then, recreate bucket-scop
 parent tokens and update `R2_PARENT_ACCESS_KEY_ID` and
 `R2_PARENT_SECRET_ACCESS_KEY` in each `issuer-*` environment. Keep publisher
 environments parent-key-free.
+
+
+## Expiry response observed from R2
+
+A real run showed that R2 answers a request signed with an expired temporary
+credential with HTTP 403 and the S3 code `SignatureDoesNotMatch`, for both writes and
+reads. The same signing code succeeded before expiry in the same run, so the expiry
+phase accepts that code only after its own positive control passed. A revoked parent
+token still differs: it yields HTTP 401.

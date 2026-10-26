@@ -233,6 +233,39 @@ class R2ProbeTests(unittest.TestCase):
         self.assertEqual(residue, set(client.failed_deletes))
         self.assertTrue(any("absent-" in key or "root-" in key for _, key in residue))
 
+    def test_expiry_accepts_the_signature_error_r2_returns_for_expired_credentials(self):
+        class RealShapeClient(FakeClient):
+            def _request(self, method, bucket=None, key=None, query=None, body=b"", headers=None):
+                response = super()._request(method, bucket, key, query, body, headers)
+                if self.now() >= self.credentials["expires_at"]:
+                    return probe.S3Response(403, b"<Error><Code>SignatureDoesNotMatch</Code></Error>")
+                return response
+        clock = [1000]
+        client = RealShapeClient(self.credentials(expires=1300), lambda: clock[0])
+        def sleep(duration):
+            clock[0] += duration
+        with patch.object(probe.time, "time", side_effect=lambda: clock[0]):
+            result = probe.probe(self.credentials(expires=1300), "100", "1", "stable", True,
+                                 client_factory=lambda credentials: client, sleep=sleep)
+        self.assertTrue(result["passed"], [item for item in result["operations"] if not item["pass"]])
+        self.assertEqual(result["expiry_result"], "expired credential denied")
+
+    def test_expiry_rejects_unrelated_error_codes_after_expiry(self):
+        class OddClient(FakeClient):
+            def _request(self, method, bucket=None, key=None, query=None, body=b"", headers=None):
+                response = super()._request(method, bucket, key, query, body, headers)
+                if self.now() >= self.credentials["expires_at"]:
+                    return probe.S3Response(403, b"<Error><Code>NoSuchBucket</Code></Error>")
+                return response
+        clock = [1000]
+        client = OddClient(self.credentials(expires=1300), lambda: clock[0])
+        def sleep(duration):
+            clock[0] += duration
+        with patch.object(probe.time, "time", side_effect=lambda: clock[0]):
+            result = probe.probe(self.credentials(expires=1300), "100", "1", "stable", True,
+                                 client_factory=lambda credentials: client, sleep=sleep)
+        self.assertFalse(result["passed"])
+
     def test_expiry_final_list_failure_before_expiry_fails_probe(self):
         clock = [1000]
         class ListingFails(FakeClient):
