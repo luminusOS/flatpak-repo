@@ -559,9 +559,11 @@ def merge_bundles(repo, bundles, descriptor, *, gpg_home=None, signing_fingerpri
     inspected = []
     with tempfile.TemporaryDirectory(prefix="flatpak-stage-", dir="/tmp/opencode") as staging:
         for arch in ARCHITECTURES:
-            inspected.append(inspect_bundle(bundles[arch], app_id=checked["package_id"],
-                                            architecture=arch, channel=checked["channel"],
-                                            version=checked["version"], work_dir=Path(staging) / arch))
+            item = inspect_bundle(bundles[arch], app_id=checked["package_id"],
+                                  architecture=arch, channel=checked["channel"],
+                                  version=checked["version"], work_dir=Path(staging) / arch)
+            item.pop("repo", None)
+            inspected.append(item)
         check_existing_version(repo, inspected, checked)
         changed = [item for item in inspected if not item.get("no_op")]
         previous = {}
@@ -624,7 +626,7 @@ def prepare_release(descriptor_path, repo, work_dir, *, allow_empty_repo=False):
     checked, bundle_paths = fetch_release(descriptor, work_dir)
     inspected = merge_bundles(repo, bundle_paths, checked, sign=False)
     for item in inspected:
-        item["architecture"] = item["ref"].split("/")[3]
+        item["architecture"] = item["ref"].split("/")[2]
     return checked, inspected
 
 
