@@ -66,6 +66,14 @@ class PublishWorkflowTests(unittest.TestCase):
         run_steps = [i for i, step in enumerate(publisher) if "run" in step]
         self.assertEqual(consume, run_steps[0])
 
+    def test_mirror_remote_and_keyring_are_removed_before_staging(self):
+        prepare = self.workflow["jobs"]["prepare"]
+        mirror = next(step["run"] for step in prepare["steps"]
+                      if step.get("name") == "Mirror public channel repository without credentials")
+        pull = mirror.index("ostree pull --repo=\"$REPO\" --mirror luminus-public")
+        self.assertLess(pull, mirror.index('ostree remote delete --repo="$REPO" luminus-public'))
+        self.assertLess(pull, mirror.index("luminus-public.trustedkeys.gpg"))
+
     def test_public_urls_never_contain_a_double_slash(self):
         prepare = self.workflow["jobs"]["prepare"]
         mirror = next(step["run"] for step in prepare["steps"]

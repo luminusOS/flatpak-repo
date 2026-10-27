@@ -643,6 +643,23 @@ class RealFlatpakImportTests(unittest.TestCase):
         with self.assertRaises(ImporterError):
             restore_repo_skeleton(self.root_case / "missing")
 
+    def test_stage_config_with_a_remote_or_foreign_option_is_rejected(self):
+        work, release, bundles = self.staged_case()
+        original = (self.repo / "config").read_text()
+        for addition in ('\n[remote "luminus-public"]\nurl=https://example.invalid/\n',
+                         "\nunexpected=1\n"):
+            (self.repo / "config").write_text(original + addition)
+            with self.assertRaisesRegex(ImporterError, "config"):
+                verify_stage(self.repo, work, release, bundles, trust_root=self.auth_trust)
+        (self.repo / "config").write_text(original)
+        verify_stage(self.repo, work, release, bundles, trust_root=self.auth_trust)
+
+    def test_stage_with_the_mirror_keyring_left_behind_is_rejected(self):
+        work, release, bundles = self.staged_case()
+        (self.repo / "luminus-public.trustedkeys.gpg").write_bytes(b"x")
+        with self.assertRaisesRegex(ImporterError, "unexpected top-level"):
+            verify_stage(self.repo, work, release, bundles, trust_root=self.auth_trust)
+
     def test_stage_with_an_extra_ref_is_rejected(self):
         work, release, bundles = self.staged_case()
         self.commit_on("app/org.luminusos.Injected/x86_64/testing", "extra")

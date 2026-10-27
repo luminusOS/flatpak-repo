@@ -104,6 +104,8 @@ jobs:
               ostree remote add --repo="$REPO" --gpg-import="trust/$CHANNEL.asc" \
                 --set=gpg-verify=false --set=gpg-verify-summary=true luminus-public "$URL/"
               ostree pull --repo="$REPO" --mirror luminus-public
+              ostree remote delete --repo="$REPO" luminus-public
+              rm -f "$REPO/luminus-public.trustedkeys.gpg"
               curl --fail --silent --show-error "$URL/summary.detached.sig" \
                 --output "$REPO/summary.detached.sig"
               for NAME in luminus-imports.json luminus-imports.json.sig; do

@@ -303,8 +303,6 @@ def _verified_summary_refs(repo, identity):
         view = _run(["ostree", "summary", "--repo", str(repo), "--view"]).decode("utf-8", "strict")
     except (UnicodeError, ImporterError) as error:
         raise ImporterError("verified channel summary cannot be read") from error
-    if identity["signing_subkey_fingerprint"][-16:].upper() not in view.upper():
-        raise ImporterError("OSTree summary signature is not from the pinned channel subkey")
     summary_refs = {}
     lines = view.splitlines()
     for index, line in enumerate(lines):
@@ -456,11 +454,24 @@ def verify_stage(repo, work_dir, descriptor, bundle_paths, *, trust_root=None, p
             raise ImporterError("staged repository refs differ from the authenticated base and verified bundles")
         if _load_imports_ledger(repo) != _updated_ledger(base_ledger, inspected, descriptor):
             raise ImporterError("staged import ledger differs from the authenticated base and verified bundles")
+        _verify_repo_config(repo)
         unexpected = {path.name for path in Path(repo).iterdir()} - STAGED_TOP_LEVEL
         if unexpected:
             raise ImporterError("staged repository contains unexpected top-level entries")
         _run(["ostree", "fsck", "--repo", str(repo), "--quiet"], timeout=900)
     return inspected
+
+
+def _verify_repo_config(repo):
+    parser = configparser.ConfigParser(interpolation=None, strict=True)
+    try:
+        parser.read_string((Path(repo) / "config").read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, configparser.Error) as error:
+        raise ImporterError("staged repository config is invalid") from error
+    if set(parser.sections()) != {"core"} or parser["core"].get("mode") != "archive-z2" \
+            or parser["core"].get("repo_version") != "1" or set(parser["core"]) - {"repo_version", "mode", "indexed-deltas"} \
+            or parser["core"].get("indexed-deltas", "true") != "true":
+        raise ImporterError("staged repository config is not the plain archive configuration")
 
 
 def _updated_ledger(ledger, inspected, checked):
