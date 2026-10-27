@@ -101,9 +101,17 @@ exact current commit once so the ledger can record it. A different commit is
 rejected until that one-time same-commit bootstrap succeeds; operators must not
 manually invent version history.
 
-Publisher signs the staged repository, generates static deltas for changed
-refs, then creates a detached signature for `luminus-imports.json` with the
-channel signing subkey, and computes a PUT-only upload plan. Immutable objects/deltas are
+Static deltas are not published. A delta carries the commit's detached
+metadata in its header, so a delta generated before signing hides the commit
+signature from clients that use the delta index, which is what `flatpak` does:
+the first published channel failed to install for that reason. The publisher
+removes any `deltas` and `delta-indexes` from the staged copy before it
+regenerates the summary. Old delta objects already in the bucket stay
+unreferenced until cleanup (T18). Generating deltas after signing is a later
+optimization that T19 measures.
+
+Publisher signs the staged repository, then creates a detached signature for `luminus-imports.json` with the
+channel signing subkey, and computes a PUT-only upload plan. Immutable objects are
 uploaded first and checked at their exact public HTTPS URLs. Before mutable
 metadata starts, the importer requires at least 120 seconds remain on the
 credential expiry; this is a reserved bound for the small metadata phase. It
