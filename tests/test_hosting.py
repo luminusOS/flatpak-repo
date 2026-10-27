@@ -69,7 +69,7 @@ class HostingTests(unittest.TestCase):
 
         opener = mock.Mock()
         opener.open.side_effect = [Response(b""), Response()]
-        url = "https://flatpak.luminusos.org/stable/objects/_t05/run/detached.commitmeta"
+        url = "https://flatpak.luminusos.org/stable/objects/_hosting-check/run/detached.commitmeta"
         result = hosting.probe(url, opener=opener)
         self.assertEqual([result[method]["status"] for method in ("head", "get")], [200, 200])
         self.assertEqual(result["requests"], 2)
@@ -85,26 +85,26 @@ class HostingTests(unittest.TestCase):
     def test_commitmeta_probe_rejects_paths_outside_exact_owned_key(self):
         for path in (
             "/stable/objects/ab/detached.commitmeta",
-            "/stable/objects/_t05/bad.nonce/detached.commitmeta",
-            "/stable/objects/_t05/run/extra/detached.commitmeta",
-            "/stable/objects/_t05/run/other.commitmeta",
+            "/stable/objects/_hosting-check/bad.nonce/detached.commitmeta",
+            "/stable/objects/_hosting-check/run/extra/detached.commitmeta",
+            "/stable/objects/_hosting-check/run/other.commitmeta",
         ):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 hosting.validate_probe_url(f"https://flatpak.luminusos.org{path}")
 
     def test_probe_accepts_only_owned_https_test_paths(self):
         nonce = "run_2026-10"
-        valid = f"https://flatpak.luminusos.org/stable/objects/_t05/{nonce}/immutable.bin"
+        valid = f"https://flatpak.luminusos.org/stable/objects/_hosting-check/{nonce}/immutable.bin"
         for url in (
-            "http://flatpak.luminusos.org/stable/objects/_t05/run/immutable.bin",
-            "https://evil.example/stable/objects/_t05/run/immutable.bin",
-            "https://flatpak.luminusos.org:443/stable/objects/_t05/run/immutable.bin",
-            "https://user@flatpak.luminusos.org/stable/objects/_t05/run/immutable.bin",
-            "https://flatpak.luminusos.org/stable/objects/_t05/run/a%2fb",
-            "https://flatpak.luminusos.org/stable/objects/_t05/run/../summary",
-            "https://flatpak.luminusos.org/stable/objects/_t05/run/immutable.bin?x=1",
+            "http://flatpak.luminusos.org/stable/objects/_hosting-check/run/immutable.bin",
+            "https://evil.example/stable/objects/_hosting-check/run/immutable.bin",
+            "https://flatpak.luminusos.org:443/stable/objects/_hosting-check/run/immutable.bin",
+            "https://user@flatpak.luminusos.org/stable/objects/_hosting-check/run/immutable.bin",
+            "https://flatpak.luminusos.org/stable/objects/_hosting-check/run/a%2fb",
+            "https://flatpak.luminusos.org/stable/objects/_hosting-check/run/../summary",
+            "https://flatpak.luminusos.org/stable/objects/_hosting-check/run/immutable.bin?x=1",
             "https://flatpak.luminusos.org/stable/objects/real-package.flatpak",
-            "https://rpm.luminusos.org/stable/45/x86_64/_t05/run/immutable.rpm",
+            "https://rpm.luminusos.org/stable/45/x86_64/_hosting-check/run/immutable.rpm",
         ):
             with self.subTest(url=url), self.assertRaises(ValueError):
                 hosting.validate_probe_url(url)
@@ -129,7 +129,7 @@ class HostingTests(unittest.TestCase):
 
         opener = mock.Mock()
         opener.open.side_effect = [Response(b""), Response()]
-        url = "https://flatpak.luminusos.org/stable/objects/_t05/run/immutable.bin"
+        url = "https://flatpak.luminusos.org/stable/objects/_hosting-check/run/immutable.bin"
         result = hosting.probe(url, opener=opener)
         self.assertEqual(result["requests"], 2)
         self.assertEqual(result["expected_policy"]["classification"], "immutable")
@@ -151,7 +151,7 @@ class HostingTests(unittest.TestCase):
         opener = mock.Mock()
         opener.open.side_effect = missing
         result = hosting.probe(
-            "https://flatpak.luminusos.org/stable/_t05/run/metadata.txt", opener=opener,
+            "https://flatpak.luminusos.org/stable/_hosting-check/run/metadata.txt", opener=opener,
         )
         self.assertEqual([result[method]["status"] for method in ("head", "get")], [404, 404])
         self.assertEqual(result["requests"], 2)
@@ -178,7 +178,7 @@ class HostingTests(unittest.TestCase):
         opener.open.side_effect = [Response(), Response()]
         with self.assertRaisesRegex(ValueError, "response exceeds"):
             hosting.probe(
-                "https://flatpak.luminusos.org/stable/_t05/run/metadata.txt", opener=opener,
+                "https://flatpak.luminusos.org/stable/_hosting-check/run/metadata.txt", opener=opener,
             )
 
 

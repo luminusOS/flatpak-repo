@@ -146,10 +146,10 @@ catalog update artifact and make any registration/source changes separately.
 With Python 3.10+, Flatpak, OSTree, GnuPG and `requirements-dev.txt` available:
 
 ```sh
-python3 -m venv /tmp/opencode/luminus-t07-venv
-/tmp/opencode/luminus-t07-venv/bin/python -m pip install --only-binary=:all: -r requirements-dev.txt
-/tmp/opencode/luminus-t07-venv/bin/python -B -m unittest discover -s tests -p 'test_*.py' -v
-/tmp/opencode/luminus-t07-venv/bin/python -B -m unittest discover -s contracts -p 'test_*.py' -v
+python3 -m venv /tmp/opencode/luminus-venv
+/tmp/opencode/luminus-venv/bin/python -m pip install --only-binary=:all: -r requirements-dev.txt
+/tmp/opencode/luminus-venv/bin/python -B -m unittest discover -s tests -p 'test_*.py' -v
+/tmp/opencode/luminus-venv/bin/python -B -m unittest discover -s contracts -p 'test_*.py' -v
 ```
 
 Integration tests create synthetic OSTree commits, Flatpak bundles and a

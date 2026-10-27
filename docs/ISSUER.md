@@ -1,6 +1,6 @@
 # R2 credential issuer
 
-`issue-credentials.yml` runs only from protected `main` through `workflow_dispatch`.
+`r2-credential-check.yml` runs only from protected `main` through `workflow_dispatch`.
 The issuer checks the format-specific descriptor, derives `stable/` or `testing/`
 from the selected channel, fixes the bucket to `luminus-flatpak`, and signs the
 local R2 temporary-credential JWT with the parent secret. The request shape is
@@ -39,8 +39,7 @@ its 600-second validity window is open. That bounded replay retains the same sho
 window and credential scope; no durable replay store is used. The publisher checks
 the binding and scope, then writes credentials only to an exclusive mode-0600 file
 under `RUNNER_TEMP`. It performs a synthetic SigV4 PUT-shape check without making a
-network request. The encrypted artifact is retained for one day. `t02-transport.yml`
-remains the separate synthetic transport proof; it does not issue R2 credentials.
+network request. The encrypted artifact is retained for one day.
 
 ## Environment configuration
 
@@ -74,14 +73,14 @@ credential and rerun. Expiry mode completes the positive PUT, same-key condition
 write guard, cleanup, and both final listings before waiting for expiration. After
 expiration it performs only two nonce-named conditional PUT denial checks; it does
 not attempt cleanup or listings again. Expiry proof accepts HTTP 403 with the
-T02-observed S3 denial codes (`403` or `AccessDenied`); HTTP 401 `Unauthorized`
+S3 denial codes observed in the earlier credential proof (`403` or `AccessDenied`); HTTP 401 `Unauthorized`
 indicates revocation, not expiry, and fails the check. An unexpectedly successful
 post-expiry PUT fails the probe and prints its exact bucket and key in
 `expiry_residue` so an operator can remove the synthetic object manually. No
 cleanup is claimed for post-expiry residue.
 
 The matrix writes small synthetic objects only under
-`<channel>/_t07-probe/<run-id>-<attempt>/`. It checks own-prefix PUT, GET, HEAD,
+`<channel>/_scope-probe/<run-id>-<attempt>/`. It checks own-prefix PUT, GET, HEAD,
 list, copy, delete, and a one-part multipart upload, plus expected HTTP 403
 denials for nonce-unique keys in the other channel and bucket, a nonce-unique
 root key, list/multipart/bucket operations, and cross-prefix copy/delete. The
@@ -95,13 +94,13 @@ used. Final object and bounded multipart
 listings must both succeed and be empty. Stdout is one JSON report; the step summary is
 sanitized to operation names, expected/observed status, and pass/fail. Neither
 contains credentials, signatures, authorization headers, or object contents.
-T02 observed HTTP 403 for denied prefix accesses and successfully exercised a
+The earlier credential proof observed HTTP 403 for denied prefix accesses and successfully exercised a
 5-second credential TTL; HTTP 404 is not accepted as evidence of isolation.
 
 This opt-in test is not package publication, package/signature validation,
 edge-cache coverage, revocation proof, or proof against a compromised runner.
 The provenance check verifies the run object and independently resolves its tag ref
-to the descriptor commit, but does not inspect artifact contents; T08/T09 need
+to the descriptor commit, but does not inspect artifact contents; the release export and import work still need
 authenticated cross-repository dispatch and artifact hash verification.
 
 ## Rotation

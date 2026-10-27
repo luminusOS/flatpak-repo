@@ -100,7 +100,7 @@ class PublishWorkflowTests(unittest.TestCase):
         import_step = next(step["run"] for step in prepare["steps"]
                            if step.get("name") == "Verify release, import unsigned commits, and stage repository")
         self.assertIn("--allow-empty-repo", import_step)
-        self.assertIn('if [ -e /tmp/opencode/luminus-t09/first-publish ]', import_step)
+        self.assertIn('if [ -e /tmp/opencode/luminus-publish/first-publish ]', import_step)
         self.assertEqual(import_step.count("--allow-empty-repo"), 1)
         self.assertIn("summary.detached.sig", mirror)
         self.assertIn("luminus-imports.json.sig", mirror)
@@ -212,7 +212,7 @@ class PublishWorkflowTests(unittest.TestCase):
             self.assertNotIn("AWS_SESSION_TOKEN", str(step))
 
     def test_signing_home_is_verified_tmpfs(self):
-        self.assertIn("/dev/shm/luminus-t09-gnupg", self.raw)
+        self.assertIn("/dev/shm/luminus-publish-gnupg", self.raw)
         self.assertIn('stat -f -c %T "$GNUPGHOME"', self.raw)
 
     def test_concurrency_is_per_channel_and_not_cancelled(self):

@@ -15,11 +15,11 @@ def validate_context(environment, role, channel):
     if role not in ROLES or channel not in CHANNELS:
         raise ValueError("role or channel is outside this repository policy")
     expected = {
-        "T06_GITHUB_REPOSITORY": REPOSITORY,
-        "T06_GITHUB_REF": "refs/heads/main",
-        "T06_GITHUB_REF_PROTECTED": "true",
-        "T06_GITHUB_EVENT_NAME": "workflow_dispatch",
-        "T06_ENVIRONMENT": f"{role}-{channel}",
+        "GATE_GITHUB_REPOSITORY": REPOSITORY,
+        "GATE_GITHUB_REF": "refs/heads/main",
+        "GATE_GITHUB_REF_PROTECTED": "true",
+        "GATE_GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GATE_ENVIRONMENT": f"{role}-{channel}",
     }
     if any(environment.get(key) != value for key, value in expected.items()):
         raise ValueError("workflow context is not authorized for this environment")
@@ -27,8 +27,8 @@ def validate_context(environment, role, channel):
 
 
 def validate_canary(environment):
-    canary = environment.get("T06_CANARY", "")
-    expected = environment.get("T06_CANARY_SHA256", "")
+    canary = environment.get("GATE_CANARY", "")
+    expected = environment.get("GATE_CANARY_SHA256", "")
     if not canary or not re.fullmatch(r"[0-9a-f]{64}", expected):
         raise ValueError("disposable canary is unavailable or malformed")
     actual = hashlib.sha256(canary.encode("utf-8")).hexdigest()

@@ -437,7 +437,7 @@ def sigv4_self_test(credentials, channel, now=None):
     date = stamp.strftime("%Y%m%d")
     region, service = "auto", "s3"
     host = "synthetic.r2.cloudflarestorage.com"
-    path = f"/{BUCKET}/{prefix_for(channel)}t07-self-test"
+    path = f"/{BUCKET}/{prefix_for(channel)}self-test"
     body_hash = hashlib.sha256(b"t07 synthetic PUT shape").hexdigest()
     headers = {
         "host": host,

@@ -43,7 +43,7 @@ class FakeClient:
                 return probe.S3Response(200, b"<ListMultipartUploadsResult>" + uploads + b"</ListMultipartUploadsResult>")
             return probe.S3Response(403)
         if "list-type" in query:
-            if query.get("prefix", "") not in (self.credentials["prefix"] + "_t07-probe/100-1/",):
+            if query.get("prefix", "") not in (self.credentials["prefix"] + "_scope-probe/100-1/",):
                 return probe.S3Response(403)
             contents = b"<Contents/>" if any(k.startswith(query["prefix"]) for k in self.objects) else b""
             return probe.S3Response(200, b"<ListBucketResult>" + contents + b"</ListBucketResult>")
@@ -399,7 +399,7 @@ class R2ProbeTests(unittest.TestCase):
         original = client._request
         raised = [False]
         def fail_once(method, bucket=None, key=None, **kwargs):
-            if method == "GET" and key and key.startswith("stable/_t07-probe/100-1/object-") and not raised[0]:
+            if method == "GET" and key and key.startswith("stable/_scope-probe/100-1/object-") and not raised[0]:
                 raised[0] = True
                 raise OSError("synthetic transport failure")
             return original(method, bucket, key, **kwargs)
@@ -413,7 +413,7 @@ class R2ProbeTests(unittest.TestCase):
         original = client._request
         failed = [False]
         def fail_first_delete(method, bucket=None, key=None, **kwargs):
-            if method == "DELETE" and key and key.startswith("stable/_t07-probe/100-1/object-") and not failed[0]:
+            if method == "DELETE" and key and key.startswith("stable/_scope-probe/100-1/object-") and not failed[0]:
                 failed[0] = True
                 return probe.S3Response(403)
             return original(method, bucket, key, **kwargs)
