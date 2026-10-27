@@ -662,10 +662,22 @@ def prepare_release(descriptor_path, repo, work_dir, *, allow_empty_repo=False):
     return checked, inspected
 
 
+def sign_commits(repo, gpg_home, signing_fingerprint):
+    for ref in sorted(_repo_refs(repo)):
+        if not (ref.startswith("app/") or ref.startswith("runtime/")):
+            continue
+        commit = _run(["ostree", "rev-parse", "--repo", str(repo), ref]).decode().strip()
+        if not re.fullmatch(r"[a-f0-9]{64}", commit):
+            raise ImporterError("staged commit checksum is invalid")
+        _run(["ostree", "gpg-sign", "--repo", str(repo), "--gpg-homedir", str(gpg_home),
+              commit, signing_fingerprint], timeout=120)
+
+
 def sign_staged_repo(repo, gpg_home, signing_fingerprint):
     verify_tmpfs(gpg_home)
     if not re.fullmatch(r"[A-F0-9]{40,64}", signing_fingerprint or ""):
         raise ImporterError("channel signing fingerprint is invalid")
+    sign_commits(repo, gpg_home, signing_fingerprint)
     _run(["flatpak", "build-update-repo", "--gpg-sign=" + signing_fingerprint + "!",
           "--gpg-homedir=" + str(gpg_home), str(repo)], timeout=600)
     _run(["ostree", "summary", "--repo", str(repo), "--update", "--gpg-sign",

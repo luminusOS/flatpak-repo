@@ -462,6 +462,52 @@ class RealFlatpakImportTests(unittest.TestCase):
             sign.assert_not_called()
             upload.assert_not_called()
 
+    def subkey_only_signing_home(self):
+        home = self.root_case / "subkey-only-gpg"
+        home.mkdir(mode=0o700)
+        exported = subprocess.run(["gpg", "--batch", "--armor", "--export-secret-subkeys", self.auth_signing + "!"],
+                                  env=self.auth_env, check=True, capture_output=True).stdout
+        env = {**os.environ, "GNUPGHOME": str(home), "LC_ALL": "C"}
+        subprocess.run(["gpg", "--batch", "--import"], env=env, input=exported, check=True, capture_output=True)
+        return home
+
+    def client_pull(self, name, repo, *, verify):
+        client = self.root_case / ("client-" + name)
+        subprocess.run(["ostree", "init", "--repo", str(client), "--mode=archive-z2"], check=True, capture_output=True)
+        subprocess.run(["ostree", "remote", "add", "--repo", str(client), "--no-gpg-verify" if not verify else
+                        "--gpg-import=" + str(self.auth_trust / "trust" / "testing.asc"),
+                        "origin", "file://" + str(repo)], check=True, capture_output=True)
+        return subprocess.run(["ostree", "pull", "--repo", str(client), "origin",
+                               "app/org.luminusos.TestOne/x86_64/testing"], capture_output=True, text=True)
+
+    def test_clients_that_verify_commits_accept_only_signed_imports(self):
+        app = "org.luminusos.TestOne"
+        self.merge(app, self.bundles(app))
+        self.assertNotEqual(self.client_pull("before", self.repo, verify=True).returncode, 0)
+        home = self.subkey_only_signing_home()
+        sign_staged_repo(self.repo, home, self.auth_signing)
+        pulled = self.client_pull("after", self.repo, verify=True)
+        self.assertEqual(pulled.returncode, 0, pulled.stderr)
+        subprocess.run(["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"], capture_output=True)
+
+    def test_commits_signed_by_another_key_are_not_accepted_by_clients(self):
+        app = "org.luminusos.TestOne"
+        self.merge(app, self.bundles(app))
+        other = self.root_case / "other-signer"
+        other.mkdir(mode=0o700)
+        env = {**os.environ, "GNUPGHOME": str(other), "LC_ALL": "C"}
+        subprocess.run(["gpg", "--batch", "--passphrase", "", "--quick-generate-key", "Other <o@example.invalid>",
+                        "rsa2048", "sign", "1d"], env=env, check=True, capture_output=True)
+        fingerprint = next(line.split(":")[9] for line in subprocess.run(
+            ["gpg", "--batch", "--with-colons", "--list-keys"], env=env, check=True,
+            capture_output=True, text=True).stdout.splitlines() if line.startswith("fpr:"))
+        commit = subprocess.run(["ostree", "rev-parse", "--repo", str(self.repo), "app/" + app + "/x86_64/testing"],
+                                check=True, capture_output=True, text=True).stdout.strip()
+        subprocess.run(["ostree", "gpg-sign", "--repo", str(self.repo), "--gpg-homedir", str(other), commit, fingerprint],
+                       check=True, capture_output=True)
+        self.assertNotEqual(self.client_pull("foreign", self.repo, verify=True).returncode, 0)
+        subprocess.run(["gpgconf", "--homedir", str(other), "--kill", "gpg-agent"], capture_output=True)
+
     def test_signing_publisher_generates_authenticated_ledger_signature(self):
         app = "org.luminusos.TestOne"
         self.merge(app, self.bundles(app))
