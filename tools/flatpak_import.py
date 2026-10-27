@@ -37,6 +37,7 @@ MAX_REPORT_BYTES = 1024 * 1024
 MAX_BUNDLE_BYTES = 2 * 1024 * 1024 * 1024
 DOWNLOAD_TIMEOUT = 30
 PUBLIC_VERIFY_TIMEOUT = 120
+USER_AGENT = "luminus-flatpak-publisher/1"
 REDIRECT_ASSET_HOSTS = {"objects.githubusercontent.com", "release-assets.githubusercontent.com"}
 ALLOWED_ASSET_HOSTS = {"github.com"} | REDIRECT_ASSET_HOSTS
 TAG_PATTERN = re.compile(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-rc\.?[1-9][0-9]*)?\Z")
@@ -349,9 +350,13 @@ def snapshot_base_auth(repo, destination):
             (destination / name).write_bytes((repo / name).read_bytes())
 
 
+def public_request(url):
+    return Request(url, method="GET", headers={"User-Agent": USER_AGENT})
+
+
 def _public_status(url):
     try:
-        with build_opener(_NoRedirect()).open(Request(url, method="GET"), timeout=DOWNLOAD_TIMEOUT) as response:
+        with build_opener(_NoRedirect()).open(public_request(url), timeout=DOWNLOAD_TIMEOUT) as response:
             return response.status
     except HTTPError as error:
         error.close()
@@ -742,7 +747,7 @@ def verify_public_object(key, content):
         return False
     for attempt in range(3):
         try:
-            with build_opener(_NoRedirect()).open(Request(url, method="GET"),
+            with build_opener(_NoRedirect()).open(public_request(url),
                                                   timeout=PUBLIC_VERIFY_TIMEOUT) as response:
                 if response.status != 200 or response.geturl() != url:
                     return False
