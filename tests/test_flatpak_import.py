@@ -573,11 +573,22 @@ class RealFlatpakImportTests(unittest.TestCase):
         self.assertNotIn(str(self.root_case), text)
         self.assertEqual({item["ref"].split("/")[2] for item in json.loads(text)}, {"x86_64", "aarch64"})
 
+    def test_prepare_refuses_a_first_publish_claim_when_the_public_repository_is_not_empty(self):
+        app = "org.luminusos.TestOne"
+        descriptor = self.root_case / "descriptor.json"
+        descriptor.write_text(json.dumps({k: v for k, v in self.release(app).items() if k != "manifest_sha256"}))
+        with patch("tools.flatpak_import.verify_public_empty", return_value=False), \
+                patch("tools.flatpak_import.fetch_release") as fetch:
+            with self.assertRaisesRegex(ImporterError, "not empty"):
+                prepare_release(descriptor, self.repo, self.root_case / "w", allow_empty_repo=True)
+            fetch.assert_not_called()
+
     def test_prepare_release_reports_the_architecture_not_the_branch(self):
         app = "org.luminusos.TestOne"
         bundles = self.bundles(app)
         release = self.release(app)
         with patch("tools.flatpak_import.fetch_release", return_value=(release, bundles)), \
+                patch("tools.flatpak_import.verify_public_empty", return_value=True), \
                 patch("tools.flatpak_import.verify_mirrored_repo", return_value=True):
             work = self.root_case / "prepare-work"
             descriptor = self.root_case / "descriptor.json"

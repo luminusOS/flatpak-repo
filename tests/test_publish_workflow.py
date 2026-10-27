@@ -66,6 +66,18 @@ class PublishWorkflowTests(unittest.TestCase):
         run_steps = [i for i, step in enumerate(publisher) if "run" in step]
         self.assertEqual(consume, run_steps[0])
 
+    def test_public_urls_never_contain_a_double_slash(self):
+        prepare = self.workflow["jobs"]["prepare"]
+        mirror = next(step["run"] for step in prepare["steps"]
+                      if step.get("name") == "Mirror public channel repository without credentials")
+        base = re.search(r'^\s*URL="([^"]+)"', mirror, re.M).group(1)
+        self.assertFalse(base.endswith("/"))
+        for use in re.findall(r'"?\$URL(/[^" ]*|"|/)', mirror):
+            self.assertNotIn("//", use)
+        self.assertNotIn("$URL//", mirror)
+        self.assertEqual(len(re.findall(r'"\$URL/summary"', mirror)), 1)
+        self.assertIn('luminus-public "$URL/"', mirror)
+
     def test_existing_mirror_is_pinned_and_authenticated_before_import(self):
         prepare = self.workflow["jobs"]["prepare"]
         mirror = next(step["run"] for step in prepare["steps"]

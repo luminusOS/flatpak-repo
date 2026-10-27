@@ -95,14 +95,14 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
         run: |
           REPO=/tmp/opencode/luminus-t09/repo
-          URL="https://flatpak.luminusos.org/$CHANNEL/"
+          URL="https://flatpak.luminusos.org/$CHANNEL"
           STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$URL/summary")"
           REFS_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$URL/refs/")"
           case "$STATUS" in
             200)
               ostree init --repo="$REPO" --mode=archive-z2
               ostree remote add --repo="$REPO" --gpg-import="trust/$CHANNEL.asc" \
-                --set=gpg-verify=false --set=gpg-verify-summary=true luminus-public "$URL"
+                --set=gpg-verify=false --set=gpg-verify-summary=true luminus-public "$URL/"
               ostree pull --repo="$REPO" --mirror luminus-public
               curl --fail --silent --show-error "$URL/summary.detached.sig" \
                 --output "$REPO/summary.detached.sig"
