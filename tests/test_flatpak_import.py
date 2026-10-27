@@ -52,7 +52,7 @@ class ImporterContractTests(unittest.TestCase):
         plan = fetch_plan(descriptor())
         self.assertEqual(plan.repository, "luminusOS/zaptide")
         self.assertEqual(plan.manifest_url,
-                         "https://github.com/luminusOS/zaptide/releases/download/v1.2.3-rc.1/luminus-release-manifest.json")
+                         "https://github.com/luminusOS/zaptide/releases/download/v1.2.3-rc.1/flatpak-release-manifest.json")
         self.assertTrue(any("zaptide-v1.2.3-rc.1-aarch64.flatpak" in url
                             for url in plan.asset_urls.values()))
         with self.assertRaises(ImporterError):
