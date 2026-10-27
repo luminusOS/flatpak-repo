@@ -17,6 +17,7 @@ from tools.flatpak_import import (
     validate_rc_channel, verify_tmpfs, verify_mirrored_repo, sign_staged_repo,
     BASE_AUTH_DIR, snapshot_base_auth, verify_stage, _version_rules, changed_files,
     SigV4Storage, plan_upload_files, prune_unreachable, publish_repo, is_mutable_key,
+    prepare_release,
 )
 
 
@@ -478,6 +479,26 @@ class RealFlatpakImportTests(unittest.TestCase):
         subprocess.run(["ostree", "commit", "--repo", str(self.repo), "--branch=" + ref,
                         "--tree=dir=" + str(tree), "--subject=" + label],
                        check=True, capture_output=True)
+
+    def test_merge_result_can_be_written_as_json_by_the_prepare_command(self):
+        app = "org.luminusos.TestOne"
+        inspected = self.merge(app, self.bundles(app))
+        text = json.dumps(inspected, sort_keys=True)
+        self.assertNotIn(str(self.root_case), text)
+        self.assertEqual({item["ref"].split("/")[2] for item in json.loads(text)}, {"x86_64", "aarch64"})
+
+    def test_prepare_release_reports_the_architecture_not_the_branch(self):
+        app = "org.luminusos.TestOne"
+        bundles = self.bundles(app)
+        release = self.release(app)
+        with patch("tools.flatpak_import.fetch_release", return_value=(release, bundles)), \
+                patch("tools.flatpak_import.verify_mirrored_repo", return_value=True):
+            work = self.root_case / "prepare-work"
+            descriptor = self.root_case / "descriptor.json"
+            descriptor.write_text(json.dumps({k: v for k, v in release.items() if k != "manifest_sha256"}))
+            _checked, inspected = prepare_release(descriptor, self.repo, work, allow_empty_repo=True)
+        self.assertEqual({item["architecture"] for item in inspected}, {"x86_64", "aarch64"})
+        json.dumps(inspected)
 
     def test_stage_matching_authenticated_base_and_verified_bundles_is_accepted(self):
         work, release, bundles = self.staged_case()
