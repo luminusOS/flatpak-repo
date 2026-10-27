@@ -218,14 +218,26 @@ def download_asset(url, *, limit, opener=None):
         response.close()
 
 
+def _command_name(command):
+    words = [Path(str(command[0])).name] if command else []
+    for word in command[1:3]:
+        if re.fullmatch(r"[a-z][a-z-]*", str(word)):
+            words.append(str(word))
+    return " ".join(words)
+
+
 def _run(command, *, timeout=120):
     try:
         result = subprocess.run(command, capture_output=True, check=False, timeout=timeout,
                                 env={**os.environ, "LC_ALL": "C"})
     except (OSError, subprocess.TimeoutExpired) as error:
-        raise ImporterError("Flatpak repository inspection failed") from error
+        failure = ImporterError("Flatpak repository inspection failed")
+        failure.detail = _command_name(command)
+        raise failure from error
     if result.returncode:
-        raise ImporterError("Flatpak repository inspection failed")
+        failure = ImporterError("Flatpak repository inspection failed")
+        failure.detail = _command_name(command)
+        raise failure
     return result.stdout
 
 
@@ -845,7 +857,8 @@ def main(argv=None):
         print(json.dumps({"status": "imported", "refs": result_refs}, sort_keys=True))
         return 0
     except (ImporterError, PublishError) as error:
-        print("Flatpak import failed:", error, file=sys.stderr)
+        detail = getattr(error, "detail", "")
+        print("Flatpak import failed:", error, *(["(" + detail + ")"] if detail else []), file=sys.stderr)
         return 1
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
         frame = error.__traceback__

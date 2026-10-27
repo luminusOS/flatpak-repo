@@ -75,6 +75,19 @@ class PublicReadTests(unittest.TestCase):
         self.assertEqual(set(seen), {USER_AGENT})
 
 
+class CommandNameTests(unittest.TestCase):
+    def test_failure_names_the_command_without_arguments_or_paths(self):
+        from tools.flatpak_import import _command_name, _run
+        self.assertEqual(_command_name(["ostree", "fsck", "--repo", "/secret/path", "--quiet"]), "ostree fsck")
+        self.assertEqual(_command_name(["/usr/bin/flatpak", "build-update-repo", "--gpg-sign=ABC"]),
+                         "flatpak build-update-repo")
+        self.assertEqual(_command_name(["gpg", "--batch", "--local-user", "KEY"]), "gpg")
+        with self.assertRaises(ImporterError) as context:
+            _run(["ostree", "no-such-subcommand", "--repo", "/nonexistent/secret"])
+        self.assertEqual(context.exception.detail, "ostree no-such-subcommand")
+        self.assertNotIn("secret", context.exception.detail)
+
+
 class ImporterCommandLineTests(unittest.TestCase):
     def test_script_runs_from_any_directory_like_the_workflow_does(self):
         with tempfile.TemporaryDirectory(prefix="importer-cli-", dir="/tmp/opencode") as directory:
