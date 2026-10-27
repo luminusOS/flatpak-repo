@@ -398,7 +398,22 @@ def _version_rules(base_refs, base_ledger, inspected, descriptor):
             raise ImporterError("application version is not newer than the current ref")
 
 
+REPO_SKELETON = ("objects", "refs/heads", "refs/remotes", "refs/mirrors", "tmp", "state", "extensions")
+
+
+def restore_repo_skeleton(repo):
+    repo = Path(repo)
+    if not repo.is_dir() or repo.is_symlink():
+        raise ImporterError("staged repository is missing")
+    for name in REPO_SKELETON:
+        target = repo / name
+        if target.is_symlink() or (target.exists() and not target.is_dir()):
+            raise ImporterError("staged repository layout is invalid")
+        target.mkdir(parents=True, exist_ok=True)
+
+
 def verify_stage(repo, work_dir, descriptor, bundle_paths, *, trust_root=None, public_empty=None):
+    restore_repo_skeleton(repo)
     channel = descriptor.get("channel")
     if channel not in CHANNELS or set(bundle_paths) != set(ARCHITECTURES):
         raise ImporterError("staged repository inputs are invalid")

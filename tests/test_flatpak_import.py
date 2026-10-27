@@ -17,7 +17,7 @@ from tools.flatpak_import import (
     validate_rc_channel, verify_tmpfs, verify_mirrored_repo, sign_staged_repo,
     BASE_AUTH_DIR, snapshot_base_auth, verify_stage, _version_rules, changed_files,
     SigV4Storage, plan_upload_files, prune_unreachable, publish_repo, is_mutable_key,
-    prepare_release, public_request, verify_public_empty, verify_public_object, USER_AGENT,
+    prepare_release, restore_repo_skeleton, public_request, verify_public_empty, verify_public_object, USER_AGENT,
 )
 
 
@@ -545,6 +545,46 @@ class RealFlatpakImportTests(unittest.TestCase):
         inspected = verify_stage(self.repo, work, release, bundles, trust_root=self.auth_trust)
         self.assertEqual({item["architecture"] for item in inspected}, {"x86_64", "aarch64"})
         self.assertTrue(all(not item["no_op"] for item in inspected))
+
+    def transferred_copy(self):
+        copy = self.root_case / "transferred-repo"
+        for path in sorted(self.repo.rglob("*")):
+            if path.is_file():
+                target = copy / path.relative_to(self.repo)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, target)
+                target.chmod(0o644)
+        return copy
+
+    def test_stage_survives_a_transfer_that_drops_empty_directories_and_modes(self):
+        work, release, bundles = self.staged_case()
+        copy = self.transferred_copy()
+        self.assertFalse((copy / "refs" / "remotes").exists())
+        inspected = verify_stage(copy, work, release, bundles, trust_root=self.auth_trust)
+        self.assertEqual({item["architecture"] for item in inspected}, {"x86_64", "aarch64"})
+        self.assertTrue((copy / "refs" / "heads").is_dir())
+
+    def test_transferred_stage_that_differs_is_still_rejected(self):
+        work, release, bundles = self.staged_case()
+        copy = self.transferred_copy()
+        (copy / "evil.txt").write_text("x")
+        with self.assertRaisesRegex(ImporterError, "unexpected top-level"):
+            verify_stage(copy, work, release, bundles, trust_root=self.auth_trust)
+
+    def test_skeleton_restore_refuses_links_and_files_in_the_way(self):
+        base = self.root_case / "skeleton"
+        base.mkdir()
+        (base / "refs").mkdir()
+        (base / "refs" / "heads").write_text("not a directory")
+        with self.assertRaises(ImporterError):
+            restore_repo_skeleton(base)
+        other = self.root_case / "skeleton2"
+        other.mkdir()
+        (other / "state").symlink_to(self.root_case)
+        with self.assertRaises(ImporterError):
+            restore_repo_skeleton(other)
+        with self.assertRaises(ImporterError):
+            restore_repo_skeleton(self.root_case / "missing")
 
     def test_stage_with_an_extra_ref_is_rejected(self):
         work, release, bundles = self.staged_case()
