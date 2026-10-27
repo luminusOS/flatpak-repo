@@ -47,6 +47,28 @@ def manifest(arch_files=None):
     }
 
 
+class ImporterCommandLineTests(unittest.TestCase):
+    def test_script_runs_from_any_directory_like_the_workflow_does(self):
+        with tempfile.TemporaryDirectory(prefix="importer-cli-", dir="/tmp/opencode") as directory:
+            result = subprocess.run(
+                [os.sys.executable, "-B", str(Path(__file__).resolve().parents[1] / "tools" / "flatpak_import.py"),
+                 "--mode", "prepare", "--descriptor", str(Path(directory) / "missing.json"),
+                 "--repo", str(Path(directory) / "repo"), "--work-dir", directory],
+                cwd=directory, capture_output=True, text=True, timeout=60)
+        self.assertNotIn("ModuleNotFoundError", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(result.returncode, 1)
+
+    def test_importer_errors_print_their_fixed_message_only(self):
+        source = (Path(__file__).resolve().parents[1] / "tools" / "flatpak_import.py").read_text()
+        import ast
+        for node in ast.walk(ast.parse(source)):
+            if (isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call)
+                    and getattr(node.exc.func, "id", "") in ("ImporterError", "PublishError")):
+                for argument in node.exc.args:
+                    self.assertIsInstance(argument, ast.Constant, ast.dump(node))
+
+
 class ImporterContractTests(unittest.TestCase):
     def test_fetch_plan_is_fixed_to_allowlisted_release_assets(self):
         plan = fetch_plan(descriptor())
