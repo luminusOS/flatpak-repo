@@ -840,8 +840,12 @@ def main(argv=None):
     except (ImporterError, PublishError) as error:
         print("Flatpak import failed:", error, file=sys.stderr)
         return 1
-    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
-        print("Flatpak import failed", file=sys.stderr)
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
+        frame = error.__traceback__
+        while frame is not None and frame.tb_next is not None:
+            frame = frame.tb_next
+        where = f"{Path(frame.tb_frame.f_code.co_filename).name}:{frame.tb_lineno}" if frame else "unknown"
+        print("Flatpak import failed:", type(error).__name__, "at", where, file=sys.stderr)
         return 1
 
 
