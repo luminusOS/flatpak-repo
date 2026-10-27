@@ -17,7 +17,7 @@ from tools.flatpak_import import (
     validate_rc_channel, verify_tmpfs, verify_mirrored_repo, sign_staged_repo,
     BASE_AUTH_DIR, snapshot_base_auth, verify_stage, _version_rules, changed_files,
     SigV4Storage, plan_upload_files, prune_unreachable, publish_repo, is_mutable_key,
-    prepare_release, restore_repo_skeleton, public_request, verify_public_empty, verify_public_object, USER_AGENT,
+    prepare_release, restore_repo_skeleton, drop_static_deltas, public_request, verify_public_empty, verify_public_object, USER_AGENT,
 )
 
 
@@ -340,7 +340,10 @@ class RealFlatpakImportTests(unittest.TestCase):
                        capture_output=True)
         ref = f"app/{app}/{arch}/{branch}"
         subprocess.run(["ostree", "commit", "--repo", str(source), "--branch=" + ref,
-                        "--tree=dir=" + str(tree), "--subject=" + (subject or version)],
+                        "--tree=dir=" + str(tree), "--subject=" + (subject or version),
+                        "--add-metadata-string=xa.metadata=" + (tree / "metadata").read_text(encoding="utf-8"),
+                        "--add-metadata=xa.installed-size=uint64 100",
+                        "--add-metadata=xa.download-size=uint64 100"],
                        check=True, capture_output=True)
         bundle = root / "app.flatpak"
         subprocess.run(["flatpak", "build-bundle", "--arch=" + arch, str(source), str(bundle),
@@ -489,6 +492,66 @@ class RealFlatpakImportTests(unittest.TestCase):
         pulled = self.client_pull("after", self.repo, verify=True)
         self.assertEqual(pulled.returncode, 0, pulled.stderr)
         subprocess.run(["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"], capture_output=True)
+
+    def flatpak_install_over_http(self, *, keep_deltas):
+        import functools
+        import http.server
+        import threading
+        app = "org.luminusos.TestOne"
+        self.merge(app, self.bundles(app))
+        commit = subprocess.run(["ostree", "rev-parse", "--repo", str(self.repo), "app/" + app + "/x86_64/testing"],
+                                check=True, capture_output=True, text=True).stdout.strip()
+        subprocess.run(["ostree", "static-delta", "generate", "--repo", str(self.repo), "--empty", "--to=" + commit],
+                       check=True, capture_output=True)
+        home = self.subkey_only_signing_home()
+        if keep_deltas:
+            with patch("tools.flatpak_import.drop_static_deltas"):
+                sign_staged_repo(self.repo, home, self.auth_signing)
+            self.assertTrue((self.repo / "deltas").is_dir())
+        else:
+            sign_staged_repo(self.repo, home, self.auth_signing)
+            self.assertFalse((self.repo / "deltas").exists())
+            self.assertFalse((self.repo / "delta-indexes").exists())
+
+        class Quiet(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), functools.partial(Quiet, directory=str(self.repo)))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        user = self.root_case / "flatpak-user"
+        user.mkdir()
+        env = {**os.environ, "FLATPAK_USER_DIR": str(user)}
+        try:
+            subprocess.run(["flatpak", "remote-add", "--user",
+                            "--gpg-import=" + str(self.auth_trust / "trust" / "testing.asc"), "luminus-test",
+                            f"http://127.0.0.1:{server.server_address[1]}"],
+                           env=env, check=True, capture_output=True, timeout=120)
+            return subprocess.run(["flatpak", "install", "--user", "-y", "--noninteractive", "--no-deploy",
+                                   "--no-deps", "luminus-test", app + "//testing"], env=env,
+                                  capture_output=True, text=True, timeout=180)
+        finally:
+            server.shutdown()
+            subprocess.run(["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"], capture_output=True)
+
+    @unittest.skipUnless(shutil.which("flatpak"), "flatpak is required")
+    def test_the_flatpak_client_installs_a_signed_import_over_http(self):
+        result = self.flatpak_install_over_http(keep_deltas=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(shutil.which("flatpak"), "flatpak is required")
+    def test_deltas_generated_before_signing_make_the_flatpak_client_reject_the_commit(self):
+        result = self.flatpak_install_over_http(keep_deltas=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no signatures found", result.stderr)
+
+    def test_static_delta_removal_refuses_links(self):
+        base = self.root_case / "delta-links"
+        base.mkdir()
+        (base / "deltas").symlink_to(self.root_case)
+        with self.assertRaises(ImporterError):
+            drop_static_deltas(base)
 
     def test_commits_signed_by_another_key_are_not_accepted_by_clients(self):
         app = "org.luminusos.TestOne"

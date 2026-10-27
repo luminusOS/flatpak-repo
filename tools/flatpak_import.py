@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -609,24 +610,10 @@ def merge_bundles(repo, bundles, descriptor, *, gpg_home=None, signing_fingerpri
             inspected.append(item)
         check_existing_version(repo, inspected, checked)
         changed = [item for item in inspected if not item.get("no_op")]
-        previous = {}
-        for item in changed:
-            if item["ref"] in _repo_refs(repo):
-                previous[item["ref"]] = _run(["ostree", "rev-parse", "--repo", str(repo), item["ref"]]).decode().strip()
         for arch, item in zip(ARCHITECTURES, inspected):
             if item.get("no_op"):
                 continue
             _run(["flatpak", "build-import-bundle", "--no-update-summary", str(repo), str(bundles[arch])])
-        if changed:
-            for item in changed:
-                current = _run(["ostree", "rev-parse", "--repo", str(repo), item["ref"]]).decode().strip()
-                if item["ref"] in previous:
-                    delta = ["ostree", "static-delta", "generate", "--repo", str(repo),
-                             "--from=" + previous[item["ref"]], "--to=" + current]
-                else:
-                    delta = ["ostree", "static-delta", "generate", "--repo", str(repo),
-                             "--empty", "--to=" + current]
-                _run(delta, timeout=600)
         if changed and sign:
             verify_tmpfs(gpg_home)
             _run(["flatpak", "build-update-repo", "--gpg-sign=" + signing_fingerprint + "!",
@@ -675,6 +662,15 @@ def prepare_release(descriptor_path, repo, work_dir, *, allow_empty_repo=False):
     return checked, inspected
 
 
+def drop_static_deltas(repo):
+    for name in ("deltas", "delta-indexes"):
+        target = Path(repo) / name
+        if target.is_symlink():
+            raise ImporterError("staged repository layout is invalid")
+        if target.is_dir():
+            shutil.rmtree(target)
+
+
 def sign_commits(repo, gpg_home, signing_fingerprint):
     for ref in sorted(_repo_refs(repo)):
         if not (ref.startswith("app/") or ref.startswith("runtime/")):
@@ -691,6 +687,7 @@ def sign_staged_repo(repo, gpg_home, signing_fingerprint):
     if not re.fullmatch(r"[A-F0-9]{40,64}", signing_fingerprint or ""):
         raise ImporterError("channel signing fingerprint is invalid")
     sign_commits(repo, gpg_home, signing_fingerprint)
+    drop_static_deltas(repo)
     _run(["flatpak", "build-update-repo", "--gpg-sign=" + signing_fingerprint + "!",
           "--gpg-homedir=" + str(gpg_home), str(repo)], timeout=600)
     _run(["ostree", "summary", "--repo", str(repo), "--update", "--gpg-sign",
