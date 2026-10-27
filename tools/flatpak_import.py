@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from contracts import distribution_contract
 import issuer
@@ -835,7 +836,10 @@ def main(argv=None):
                         if key in item} for item in inspected]
         print(json.dumps({"status": "imported", "refs": result_refs}, sort_keys=True))
         return 0
-    except (ImporterError, PublishError, OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+    except (ImporterError, PublishError) as error:
+        print("Flatpak import failed:", error, file=sys.stderr)
+        return 1
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
         print("Flatpak import failed", file=sys.stderr)
         return 1
 
