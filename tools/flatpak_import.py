@@ -31,10 +31,9 @@ from publish_plan import ImportError as PublishError, build_upload_plan, is_muta
 
 CHANNELS = ("stable", "testing")
 ARCHITECTURES = ("x86_64", "aarch64")
-MANIFEST_NAME = "flatpak-release-manifest.json"
-REPORT_NAME = "flatpak-export-report.json"
-MAX_MANIFEST_BYTES = 1024 * 1024
-MAX_REPORT_BYTES = 1024 * 1024
+CHECKSUMS_NAME = "checksums.txt"
+MAX_CHECKSUMS_BYTES = 64 * 1024
+ARTIFACT_NAME = "flatpak-{arch}"
 MAX_BUNDLE_BYTES = 2 * 1024 * 1024 * 1024
 DOWNLOAD_TIMEOUT = 30
 PUBLIC_VERIFY_TIMEOUT = 120
@@ -57,8 +56,7 @@ class ImporterError(Exception):
 class FetchPlan:
     repository: str
     tag: str
-    manifest_url: str
-    report_url: str
+    checksums_url: str
     asset_urls: dict
 
 
@@ -93,7 +91,7 @@ def fetch_plan(descriptor):
     slug = repository.rsplit("/", 1)[1]
     base = f"https://github.com/{repository}/releases/download/{checked['tag']}"
     return FetchPlan(
-        repository, checked["tag"], f"{base}/{MANIFEST_NAME}", f"{base}/{REPORT_NAME}",
+        repository, checked["tag"], f"{base}/{CHECKSUMS_NAME}",
         {arch: f"{base}/{slug}-{checked['tag']}-{arch}.flatpak" for arch in ARCHITECTURES},
     )
 
@@ -145,25 +143,58 @@ def verify_tmpfs(path):
     return home
 
 
-def _reject_duplicate_json(pairs):
+_CHECKSUM_LINE = re.compile(r"([0-9a-f]{64})  ([A-Za-z0-9][A-Za-z0-9._-]{0,199})\Z")
+
+
+def parse_checksums(content):
+    try:
+        lines = content.decode("utf-8", "strict").split("\n")
+    except UnicodeError as error:
+        raise ImporterError("release checksums are invalid") from error
+    if lines and lines[-1] == "":
+        lines.pop()
     result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ImporterError("release JSON contains duplicate fields")
-        result[key] = value
+    for line in lines:
+        match = _CHECKSUM_LINE.fullmatch(line)
+        if not match or match.group(2) in result:
+            raise ImporterError("release checksums are invalid")
+        result[match.group(2)] = match.group(1)
+    if not result:
+        raise ImporterError("release checksums are invalid")
     return result
 
 
-def _reject_json_constant(value):
-    raise ImporterError("release JSON contains a non-finite number")
+def list_flatpak_artifacts(repository, run_id, fetcher=None):
+    listing = (fetcher or issuer.fetch_github_json)(f"/repos/{repository}/actions/runs/{run_id}/artifacts")
+    entries = listing.get("artifacts") if isinstance(listing, dict) else None
+    if not isinstance(entries, list):
+        raise ImporterError("source run artifact listing is invalid")
+    found = {}
+    for arch in ARCHITECTURES:
+        name = ARTIFACT_NAME.format(arch=arch)
+        matches = [item for item in entries if isinstance(item, dict) and item.get("name") == name
+                   and item.get("expired") is False]
+        if len(matches) != 1 or type(matches[0].get("id")) is not int or matches[0]["id"] < 1:
+            raise ImporterError("source run does not list exactly one bundle artifact per architecture")
+        found[arch] = matches[0]["id"]
+    if len(set(found.values())) != len(found):
+        raise ImporterError("source run artifact identifiers are not distinct")
+    return found
 
 
-def parse_release_json(content):
-    try:
-        return json.loads(content.decode("utf-8", "strict"), object_pairs_hook=_reject_duplicate_json,
-                          parse_constant=_reject_json_constant)
-    except (UnicodeError, json.JSONDecodeError) as error:
-        raise ImporterError("release JSON is invalid") from error
+def build_manifest(descriptor, bundles, artifact_ids):
+    checked = validate_descriptor(descriptor)
+    repository, _caller, contract_workflow, _ = issuer.SOURCE_RELEASES[checked["package_id"]]
+    return {
+        "schema_version": 1, "kind": "release", "format": "flatpak", "application": checked["package_id"],
+        "version": checked["version"],
+        "source": {"repository": repository, "workflow": contract_workflow, "tag": checked["tag"],
+                   "revision": checked["git_sha"], "run_id": int(checked["source_run_id"]),
+                   "run_attempt": checked["source_run_attempt"]},
+        "artifacts": {arch: {"artifact_id": artifact_ids[arch], "filename": bundles[arch]["filename"],
+                             "sha256": bundles[arch]["sha256"], "size_bytes": len(bundles[arch]["data"])}
+                      for arch in ARCHITECTURES},
+    }
 
 
 def verify_artifact(content, artifact):
@@ -629,22 +660,28 @@ def merge_bundles(repo, bundles, descriptor, *, gpg_home=None, signing_fingerpri
     return inspected
 
 
-def fetch_release(descriptor, work_dir):
+def fetch_release(descriptor, work_dir, *, artifact_lister=None):
     plan = fetch_plan(descriptor)
-    manifest_data = download_asset(plan.manifest_url, limit=MAX_MANIFEST_BYTES)
-    manifest = validate_manifest(parse_release_json(manifest_data), descriptor)
-    report = parse_release_json(download_asset(plan.report_url, limit=MAX_REPORT_BYTES))
-    if not isinstance(report, dict):
-        raise ImporterError("Flatpak export report is invalid")
-    checked = {**descriptor, "manifest_sha256": hashlib.sha256(manifest_data).hexdigest()}
+    checksums = parse_checksums(download_asset(plan.checksums_url, limit=MAX_CHECKSUMS_BYTES))
+    bundles = {}
+    for arch, url in plan.asset_urls.items():
+        filename = urlsplit(url).path.rsplit("/", 1)[1]
+        data = download_asset(url, limit=MAX_BUNDLE_BYTES)
+        digest = hashlib.sha256(data).hexdigest()
+        if filename not in checksums or not hmac.compare_digest(digest, checksums[filename]):
+            raise ImporterError("release asset does not match the published checksums")
+        bundles[arch] = {"filename": filename, "sha256": digest, "data": data}
+    artifact_ids = (artifact_lister or list_flatpak_artifacts)(plan.repository, descriptor["source_run_id"])
+    manifest = validate_manifest(build_manifest(descriptor, bundles, artifact_ids), descriptor)
+    canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+    checked = {**descriptor, "manifest_sha256": hashlib.sha256(canonical).hexdigest()}
     bundle_paths = {}
     Path(work_dir).mkdir(parents=True, exist_ok=True)
-    for arch, url in plan.asset_urls.items():
-        data = download_asset(url, limit=MAX_BUNDLE_BYTES)
+    for arch in ARCHITECTURES:
         artifact = manifest["artifacts"][arch]
-        verify_artifact(data, artifact)
+        verify_artifact(bundles[arch]["data"], artifact)
         bundle_paths[arch] = Path(work_dir) / artifact["filename"]
-        bundle_paths[arch].write_bytes(data)
+        bundle_paths[arch].write_bytes(bundles[arch]["data"])
     return checked, bundle_paths
 
 

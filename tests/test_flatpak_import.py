@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from tools.flatpak_import import (
     ImporterError, _validate_tree_paths, catalog_update_document, download_asset, fetch_plan,
-    inspect_bundle, merge_bundles, validate_manifest, parse_release_json, verify_artifact,
+    inspect_bundle, merge_bundles, validate_manifest, verify_artifact, parse_checksums, list_flatpak_artifacts, build_manifest, fetch_release,
     validate_rc_channel, verify_tmpfs, verify_mirrored_repo, sign_staged_repo,
     BASE_AUTH_DIR, snapshot_base_auth, verify_stage, _version_rules, changed_files,
     SigV4Storage, plan_upload_files, prune_unreachable, publish_repo, is_mutable_key,
@@ -114,8 +114,8 @@ class ImporterContractTests(unittest.TestCase):
     def test_fetch_plan_is_fixed_to_allowlisted_release_assets(self):
         plan = fetch_plan(descriptor())
         self.assertEqual(plan.repository, "luminusOS/zaptide")
-        self.assertEqual(plan.manifest_url,
-                         "https://github.com/luminusOS/zaptide/releases/download/v1.2.3-rc.1/flatpak-release-manifest.json")
+        self.assertEqual(plan.checksums_url,
+                         "https://github.com/luminusOS/zaptide/releases/download/v1.2.3-rc.1/checksums.txt")
         self.assertTrue(any("zaptide-v1.2.3-rc.1-aarch64.flatpak" in url
                             for url in plan.asset_urls.values()))
         with self.assertRaises(ImporterError):
@@ -177,10 +177,88 @@ class ImporterContractTests(unittest.TestCase):
         with self.assertRaises(ImporterError):
             verify_artifact(b"BAD", artifact)
 
-    def test_release_json_rejects_duplicate_fields_and_non_finite_numbers(self):
-        for content in (b'{"version":"1.0.0","version":"2.0.0"}', b'{"size":NaN}'):
-            with self.subTest(content=content), self.assertRaises(ImporterError):
-                parse_release_json(content)
+    def test_checksums_are_parsed_strictly(self):
+        good = ("a" * 64 + "  zaptide-v1.2.3-x86_64.flatpak\n" + "b" * 64 + "  zaptide-v1.2.3-aarch64.flatpak\n").encode()
+        parsed = parse_checksums(good)
+        self.assertEqual(parsed["zaptide-v1.2.3-aarch64.flatpak"], "b" * 64)
+        for bad in (b"", b"x", ("A" * 64 + "  f.flatpak\n").encode(), ("a" * 64 + " f.flatpak\n").encode(),
+                    ("a" * 64 + "  ../f.flatpak\n").encode(), ("a" * 64 + "  f.flatpak\n" + "b" * 64 + "  f.flatpak\n").encode(),
+                    ("a" * 64 + "  f.flatpak\r\n").encode(), b"\xff"):
+            with self.subTest(bad=bad), self.assertRaises(ImporterError):
+                parse_checksums(bad)
+
+    def test_artifact_listing_needs_exactly_one_live_bundle_artifact_per_architecture(self):
+        def listing(entries):
+            return lambda path: {"artifacts": entries}
+        entry = lambda name, ident, expired=False: {"name": name, "id": ident, "expired": expired}
+        good = [entry("flatpak-x86_64", 11), entry("flatpak-aarch64", 12), entry("appimage-x86_64", 13)]
+        self.assertEqual(list_flatpak_artifacts("luminusOS/zaptide", "5", listing(good)), {"x86_64": 11, "aarch64": 12})
+        for bad in (good[:1], good + [entry("flatpak-x86_64", 14)], [entry("flatpak-x86_64", 11), entry("flatpak-aarch64", 12, True)],
+                    [entry("flatpak-x86_64", 11), entry("flatpak-aarch64", 11)], [entry("flatpak-x86_64", True), entry("flatpak-aarch64", 12)],
+                    [entry("flatpak-x86_64", 0), entry("flatpak-aarch64", 12)]):
+            with self.subTest(bad=bad), self.assertRaises(ImporterError):
+                list_flatpak_artifacts("luminusOS/zaptide", "5", listing(bad))
+        with self.assertRaises(ImporterError):
+            list_flatpak_artifacts("luminusOS/zaptide", "5", lambda path: {"artifacts": "no"})
+
+    def release_assets(self, tamper=None):
+        data = {"x86_64": b"x86 bundle", "aarch64": b"arm bundle"}
+        names = {arch: f"zaptide-v1.2.3-rc.1-{arch}.flatpak" for arch in data}
+        checksums = "".join(f"{hashlib.sha256(data[arch]).hexdigest()}  {names[arch]}\n" for arch in data)
+        if tamper == "checksum":
+            checksums = checksums.replace(hashlib.sha256(data["aarch64"]).hexdigest(), "0" * 64)
+        if tamper == "missing":
+            checksums = checksums.splitlines(True)[0]
+        served = {"https://github.com/luminusOS/zaptide/releases/download/v1.2.3-rc.1/checksums.txt": checksums.encode()}
+        for arch in data:
+            served[f"https://github.com/luminusOS/zaptide/releases/download/v1.2.3-rc.1/{names[arch]}"] = data[arch]
+        return served, names, data
+
+    def test_fetch_release_builds_the_contract_manifest_from_checksums_bundles_and_the_run(self):
+        served, names, data = self.release_assets()
+        with tempfile.TemporaryDirectory(prefix="fetch-release-", dir="/tmp/opencode") as work, \
+                patch("tools.flatpak_import.download_asset", side_effect=lambda url, limit: served[url]):
+            checked, paths = fetch_release(descriptor(), work,
+                                           artifact_lister=lambda repository, run: {"x86_64": 21, "aarch64": 22})
+            self.assertEqual({arch: path.read_bytes() for arch, path in paths.items()}, data)
+        self.assertRegex(checked["manifest_sha256"], r"^[a-f0-9]{64}$")
+
+    def test_fetch_release_rejects_a_bundle_that_differs_from_the_published_checksums(self):
+        for tamper in ("checksum", "missing"):
+            served, names, data = self.release_assets(tamper)
+            with self.subTest(tamper=tamper), tempfile.TemporaryDirectory(prefix="fetch-release-", dir="/tmp/opencode") as work, \
+                    patch("tools.flatpak_import.download_asset", side_effect=lambda url, limit: served[url]):
+                with self.assertRaisesRegex(ImporterError, "checksums"):
+                    fetch_release(descriptor(), work, artifact_lister=lambda repository, run: {"x86_64": 21, "aarch64": 22})
+                self.assertEqual(list(Path(work).iterdir()), [])
+
+    def test_derived_manifest_follows_the_distribution_contract(self):
+        bundles = {arch: {"filename": f"zaptide-v1.2.3-rc.1-{arch}.flatpak", "sha256": "c" * 64, "data": b"x"}
+                   for arch in ("x86_64", "aarch64")}
+        built = build_manifest(descriptor(), bundles, {"x86_64": 1, "aarch64": 2})
+        self.assertEqual(validate_manifest(built, descriptor())["source"]["run_id"], 12345)
+        self.assertEqual(built["source"]["workflow"], ".github/workflows/release.yml")
+
+    def test_release_workflow_artifact_listing_path_is_allowed_for_known_repositories_only(self):
+        from tools import issuer
+        calls = []
+
+        class Opener:
+            def open(self, request, timeout):
+                calls.append(request.full_url)
+                raise HTTPError(request.full_url, 404, "x", Message(), BytesIO())
+
+        for path in ("/repos/luminusOS/zaptide/actions/runs/5/artifacts",):
+            with self.assertRaises(issuer.IssuerError):
+                issuer.fetch_github_json(path, opener=Opener())
+        self.assertEqual(calls, ["https://api.github.com/repos/luminusOS/zaptide/actions/runs/5/artifacts"])
+        for path in ("/repos/evil/x/actions/runs/5/artifacts", "/repos/luminusOS/zaptide/actions/runs/5/artifacts/1",
+                     "/repos/luminusOS/zaptide/actions/runs/5/artifacts/artifacts", "/repos/luminusOS/zaptide/actions/runs/x/artifacts",
+                     "/repos/luminusOS/zaptide/actions/runs/5/../../x"):
+            calls.clear()
+            with self.assertRaises(issuer.IssuerError):
+                issuer.fetch_github_json(path, opener=Opener())
+            self.assertEqual(calls, [], path)
 
     def test_bundle_tree_path_guard_rejects_traversal_entries(self):
         with patch("tools.flatpak_import._run", return_value=b"/\0/../../outside\0"):

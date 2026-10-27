@@ -20,8 +20,8 @@ protected issuer. Application source is never checked out or executed.
    OSTree summary verification is enabled on the temporary remote; after pull,
    the importer checks every ref and checksum in the verified summary against
    the mirror's local refs. Only then does prepare validate the release
-   descriptor/manifest/report and both bundles, verify each bundle's size and
-   SHA-256 against the manifest, import without signing, and upload the staged
+   descriptor and both bundles, verify each bundle's SHA-256 against the release's
+   `checksums.txt`, import without signing, and upload the staged
    repository and public inputs as an artifact. For existing channels,
    `ostree pull --mirror` mirrors all
    advertised refs and the commit/object/delta closure reachable from those
@@ -45,11 +45,23 @@ protected issuer. Application source is never checked out or executed.
    the capsule lifetime. Issuer approval precedes issuance, publisher approval
    follows it.
 
+The release record is derived, not downloaded. The importer does not read
+`flatpak-release-manifest.json` or `flatpak-export-report.json`, which the
+release workflow keeps as artifacts of its run and does not attach to the public
+release. It builds the contract manifest itself from the descriptor (whose
+source run the issuer verified), from the bundles it downloaded, from the SHA-256
+of each bundle in the release's `checksums.txt`, and from the public artifact
+listing of the source run (`flatpak-<arch>` must exist exactly once per
+architecture and not be expired). The result is validated with the pinned
+contract schema. The Flatpak ref, commit and runtime come from inspecting the
+bundles. What this drops compared with the build-time report is a second,
+independent record of the OSTree commit made during the build.
+
 The prepare artifact is not trusted by the publisher. Prepare saves the signed
 base files (summary, its signatures, and the ledger with its signature) under
 `base-auth/`, or an `EMPTY` marker for a first publish. Before signing anything
 the publisher rebuilds the trusted descriptor from the dispatch inputs, downloads
-the release manifest and both bundles itself, checks them against the manifest,
+both bundles and `checksums.txt` itself, checks them against each other,
 and derives the expected commits from those bundles. It then requires that
 the base signatures verify against the pinned channel key and that the staged
 repository holds exactly the refs of the authenticated base plus the two new
@@ -84,7 +96,7 @@ file inside the upload process only. Secret values are never exported through
 The importer validates expected architecture refs, application/runtime
 metadata and safe tree paths before either bundle is merged. Release versions
 come from the descriptor after it has been matched to the source release
-manifest; commit subjects and custom `Application.version` metadata are not
+derived manifest; commit subjects and custom `Application.version` metadata are not
 used for version comparison. Every imported ref is recorded in mutable
 channel-root `luminus-imports.json`:
 
