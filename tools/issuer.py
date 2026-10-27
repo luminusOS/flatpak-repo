@@ -179,7 +179,8 @@ def fetch_github_json(path, token=None, opener=None):
             if endpoint is None:
                 continue
             if endpoint.startswith("actions/runs/"):
-                allowed_path = bool(_RUN_ID.fullmatch(endpoint.removeprefix("actions/runs/")))
+                run_part = endpoint.removeprefix("actions/runs/")
+                allowed_path = bool(_RUN_ID.fullmatch(run_part.removesuffix("/artifacts")))
             elif endpoint.startswith("git/ref/tags/"):
                 allowed_path = bool(_TAG.fullmatch(endpoint.removeprefix("git/ref/tags/")))
             elif endpoint.startswith("git/tags/"):
