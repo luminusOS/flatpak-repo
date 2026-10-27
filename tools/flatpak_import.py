@@ -85,15 +85,23 @@ def validate_descriptor(descriptor):
     return {**descriptor, "git_sha": descriptor["git_sha"].lower()}
 
 
+ASSET_NAMES = {
+    "dev.luminusos.ZapTide": "zaptide-{tag}-{arch}.flatpak",
+    "org.luminusos.Aetheris": "aetheris-{release}-linux-{arch}.flatpak",
+}
+
+
 def fetch_plan(descriptor):
     checked = validate_descriptor(descriptor)
     repository = issuer.SOURCE_RELEASES[checked["package_id"]][0]
-    slug = repository.rsplit("/", 1)[1]
+    template = ASSET_NAMES.get(checked["package_id"])
+    if template is None:
+        raise ImporterError("release asset names are not defined for this application")
     base = f"https://github.com/{repository}/releases/download/{checked['tag']}"
-    return FetchPlan(
-        repository, checked["tag"], f"{base}/{CHECKSUMS_NAME}",
-        {arch: f"{base}/{slug}-{checked['tag']}-{arch}.flatpak" for arch in ARCHITECTURES},
-    )
+    names = {arch: template.format(tag=checked["tag"], release=checked["tag"][1:], arch=arch)
+             for arch in ARCHITECTURES}
+    return FetchPlan(repository, checked["tag"], f"{base}/{CHECKSUMS_NAME}",
+                     {arch: f"{base}/{name}" for arch, name in names.items()})
 
 
 def validate_manifest(manifest, descriptor):

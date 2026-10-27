@@ -121,6 +121,19 @@ class ImporterContractTests(unittest.TestCase):
         with self.assertRaises(ImporterError):
             fetch_plan({**descriptor(), "package_id": "org.example.Unknown"})
 
+    def test_aetheris_assets_use_the_names_its_release_publishes(self):
+        plan = fetch_plan({**descriptor(), "package_id": "org.luminusos.Aetheris", "tag": "v1.5.1-rc.1",
+                           "version": "1.5.1-rc.1"})
+        self.assertEqual(plan.repository, "luminusOS/aetheris")
+        self.assertEqual(plan.asset_urls["aarch64"],
+                         "https://github.com/luminusOS/aetheris/releases/download/v1.5.1-rc.1/"
+                         "aetheris-1.5.1-rc.1-linux-aarch64.flatpak")
+        self.assertEqual(plan.asset_urls["x86_64"].rsplit("/", 1)[1], "aetheris-1.5.1-rc.1-linux-x86_64.flatpak")
+        self.assertEqual(plan.checksums_url, "https://github.com/luminusOS/aetheris/releases/download/v1.5.1-rc.1/checksums.txt")
+        rc = fetch_plan({**descriptor(), "package_id": "org.luminusos.Aetheris", "tag": "v1.5.1-rc1",
+                         "version": "1.5.1-rc.1"})
+        self.assertEqual(rc.asset_urls["x86_64"].rsplit("/", 1)[1], "aetheris-1.5.1-rc1-linux-x86_64.flatpak")
+
     def test_manifest_matches_release_descriptor_and_two_architectures(self):
         self.assertEqual(validate_manifest(manifest(), descriptor())["version"], "1.2.3-rc.1")
 
