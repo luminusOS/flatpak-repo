@@ -37,7 +37,8 @@ MAX_REPORT_BYTES = 1024 * 1024
 MAX_BUNDLE_BYTES = 2 * 1024 * 1024 * 1024
 DOWNLOAD_TIMEOUT = 30
 PUBLIC_VERIFY_TIMEOUT = 120
-ALLOWED_ASSET_HOSTS = {"github.com", "objects.githubusercontent.com"}
+REDIRECT_ASSET_HOSTS = {"objects.githubusercontent.com", "release-assets.githubusercontent.com"}
+ALLOWED_ASSET_HOSTS = {"github.com"} | REDIRECT_ASSET_HOSTS
 TAG_PATTERN = re.compile(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-rc\.?[1-9][0-9]*)?\Z")
 APP_ID_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9-]*){2,}\Z")
 IMPORTS_LEDGER = "luminus-imports.json"
@@ -196,7 +197,7 @@ def download_asset(url, *, limit, opener=None):
         error.close()
         target = urlsplit(location)
         if (original.hostname != "github.com" or target.scheme != "https"
-                or target.hostname != "objects.githubusercontent.com" or target.username
+                or target.hostname not in REDIRECT_ASSET_HOSTS or target.username
                 or target.password or target.port not in (None, 443)):
             raise ImporterError("release asset redirect is not allowed") from None
         try:

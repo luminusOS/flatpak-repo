@@ -194,6 +194,16 @@ class ImporterContractTests(unittest.TestCase):
         self.assertEqual(download_asset("https://github.com/luminusOS/zaptide/a", limit=10,
                                         opener=opener), b"data")
         self.assertEqual(len(opener.calls), 2)
+        current = Opener("https://release-assets.githubusercontent.com/github-production-release-asset/1/2?sp=r")
+        self.assertEqual(download_asset("https://github.com/luminusOS/zaptide/a", limit=10,
+                                        opener=current), b"data")
+        for lookalike in ("https://release-assets.githubusercontent.com.evil.example/a",
+                          "https://evil-release-assets.githubusercontent.com/a",
+                          "http://release-assets.githubusercontent.com/a",
+                          "https://user@release-assets.githubusercontent.com/a",
+                          "https://release-assets.githubusercontent.com:8443/a"):
+            with self.assertRaises(ImporterError):
+                download_asset("https://github.com/luminusOS/zaptide/a", limit=10, opener=Opener(lookalike))
         denied = Opener("https://attacker.example/asset")
         with self.assertRaises(ImporterError):
             download_asset("https://github.com/luminusOS/zaptide/a", limit=10, opener=denied)
