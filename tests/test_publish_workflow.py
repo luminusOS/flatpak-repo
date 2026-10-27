@@ -1,5 +1,10 @@
+import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 
 import yaml
@@ -98,6 +103,76 @@ class PublishWorkflowTests(unittest.TestCase):
         descriptor_step = publisher["steps"][descriptor_index]
         self.assertIn("inputs.channel", str(descriptor_step["env"]))
         self.assertNotIn("${{", descriptor_step["run"])
+
+    def key_check_script(self):
+        publisher = self.workflow["jobs"]["publisher"]
+        run = next(step["run"] for step in publisher["steps"]
+                   if step.get("name", "").startswith("Import signing subkey"))
+        marker = "python3 - <<'PY'\n"
+        start = run.index(marker) + len(marker)
+        return run[start:run.index("\nPY", start)]
+
+    def subkey_only_home(self, root):
+        source, target = root / "source", root / "target"
+        for home in (source, target):
+            home.mkdir(mode=0o700)
+        env = {**os.environ, "GNUPGHOME": str(source), "LC_ALL": "C"}
+        run = lambda *args, **kw: subprocess.run(["gpg", "--batch", "--pinentry-mode", "loopback",
+                                                 "--passphrase", "", *args], env=env, check=True,
+                                                capture_output=True, text=True, **kw)
+        run("--quick-generate-key", "Fixture <f@example.invalid>", "rsa2048", "cert", "1d")
+        primary = next(line.split(":")[9] for line in run("--with-colons", "--list-keys").stdout.splitlines()
+                       if line.startswith("fpr:"))
+        run("--quick-add-key", primary, "rsa2048", "sign", "1d")
+        fingerprints = [line.split(":")[9] for line in
+                        run("--with-colons", "--fingerprint", "--fingerprint", "--list-keys").stdout.splitlines()
+                        if line.startswith("fpr:")]
+        exported = subprocess.run(["gpg", "--batch", "--pinentry-mode", "loopback", "--passphrase", "",
+                                   "--armor", "--export-secret-subkeys", fingerprints[1] + "!"],
+                                  env=env, check=True, capture_output=True).stdout
+        subprocess.run(["gpgconf", "--homedir", str(source), "--kill", "gpg-agent"], capture_output=True)
+        subprocess.run(["gpg", "--batch", "--import"], env={**env, "GNUPGHOME": str(target)}, input=exported,
+                       check=True, capture_output=True)
+        return target, fingerprints[0], fingerprints[1]
+
+    def test_key_material_check_accepts_a_subkey_only_export_and_rejects_others(self):
+        script = self.key_check_script()
+        with tempfile.TemporaryDirectory(prefix="key-check-", dir="/tmp/opencode") as directory:
+            target, primary, subkey = self.subkey_only_home(Path(directory))
+            env = {**os.environ, "GNUPGHOME": str(target), "LC_ALL": "C",
+                   "SIGNING_PRIMARY_FINGERPRINT": primary, "SIGNING_SUBKEY_FINGERPRINT": subkey}
+            ok = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True, text=True)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            for name, wrong in (("SIGNING_PRIMARY_FINGERPRINT", "0" * 40), ("SIGNING_SUBKEY_FINGERPRINT", "1" * 40)):
+                bad = subprocess.run([sys.executable, "-c", script], env={**env, name: wrong},
+                                     capture_output=True, text=True)
+                self.assertNotEqual(bad.returncode, 0)
+            subprocess.run(["gpgconf", "--homedir", str(target), "--kill", "gpg-agent"], capture_output=True)
+
+    def test_key_material_check_rejects_a_home_with_the_primary_secret(self):
+        script = self.key_check_script()
+        with tempfile.TemporaryDirectory(prefix="key-check-", dir="/tmp/opencode") as directory:
+            home = Path(directory) / "full"
+            home.mkdir(mode=0o700)
+            env = {**os.environ, "GNUPGHOME": str(home), "LC_ALL": "C"}
+            subprocess.run(["gpg", "--batch", "--pinentry-mode", "loopback", "--passphrase", "",
+                            "--quick-generate-key", "Full <f@example.invalid>", "rsa2048", "cert", "1d"],
+                           env=env, check=True, capture_output=True)
+            listing = subprocess.run(["gpg", "--batch", "--with-colons", "--list-keys"], env=env,
+                                     check=True, capture_output=True, text=True).stdout
+            primary = next(line.split(":")[9] for line in listing.splitlines() if line.startswith("fpr:"))
+            subprocess.run(["gpg", "--batch", "--pinentry-mode", "loopback", "--passphrase", "",
+                            "--quick-add-key", primary, "rsa2048", "sign", "1d"], env=env,
+                           check=True, capture_output=True)
+            listing = subprocess.run(["gpg", "--batch", "--with-colons", "--fingerprint", "--fingerprint",
+                                      "--list-keys"], env=env, check=True, capture_output=True, text=True).stdout
+            subkey = [line.split(":")[9] for line in listing.splitlines() if line.startswith("fpr:")][1]
+            bad = subprocess.run([sys.executable, "-c", script],
+                                 env={**env, "SIGNING_PRIMARY_FINGERPRINT": primary,
+                                      "SIGNING_SUBKEY_FINGERPRINT": subkey},
+                                 capture_output=True, text=True)
+            self.assertNotEqual(bad.returncode, 0)
+            subprocess.run(["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"], capture_output=True)
 
     def test_issuer_uses_maximum_supported_credential_ttl(self):
         issuer = self.workflow["jobs"]["issuer"]

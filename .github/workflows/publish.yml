@@ -236,16 +236,16 @@ jobs:
           current = None
           for line in output.splitlines():
               fields = line.split(":")
-              if fields[0] in ("sec", "sec#", "ssb", "ssb#"):
-                  current = {"kind": fields[0], "fingerprint": None}
+              if fields[0] in ("sec", "ssb"):
+                  current = {"kind": fields[0], "stub": fields[14] if len(fields) > 14 else "", "fingerprint": None}
                   records.append(current)
               elif fields[0] == "fpr" and current is not None and current["fingerprint"] is None:
                   current["fingerprint"] = fields[9]
-          primary = [item for item in records if item["kind"].startswith("sec")]
-          subkeys = [item for item in records if item["kind"].startswith("ssb")]
-          if (len(primary) != 1 or primary[0]["kind"] != "sec#"
+          primary = [item for item in records if item["kind"] == "sec"]
+          subkeys = [item for item in records if item["kind"] == "ssb"]
+          if (len(primary) != 1 or primary[0]["stub"] != "#"
                   or primary[0]["fingerprint"] != os.environ["SIGNING_PRIMARY_FINGERPRINT"]
-                  or len(subkeys) != 1 or subkeys[0]["kind"] != "ssb"
+                  or len(subkeys) != 1 or subkeys[0]["stub"] == "#"
                   or subkeys[0]["fingerprint"] != os.environ["SIGNING_SUBKEY_FINGERPRINT"]):
               raise SystemExit("channel signing key material does not match its environment")
           PY
