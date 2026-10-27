@@ -29,7 +29,7 @@ from publish_plan import ImportError as PublishError, build_upload_plan, is_muta
 
 CHANNELS = ("stable", "testing")
 ARCHITECTURES = ("x86_64", "aarch64")
-MANIFEST_NAME = "luminus-release-manifest.json"
+MANIFEST_NAME = "flatpak-release-manifest.json"
 REPORT_NAME = "flatpak-export-report.json"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REPORT_BYTES = 1024 * 1024
