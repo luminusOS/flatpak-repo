@@ -515,7 +515,7 @@ class IssuerTests(unittest.TestCase):
         }
         result = issuer.sigv4_self_test(credentials, "stable", now=1700000000)
         self.assertEqual(result["method"], "PUT")
-        self.assertEqual(result["path"], "/luminus-flatpak/stable/t07-self-test")
+        self.assertEqual(result["path"], "/luminus-flatpak/stable/self-test")
         self.assertIn("x-amz-security-token", result["signed_headers"])
         self.assertNotIn("http", json.dumps(result))
 
@@ -593,7 +593,7 @@ class IssuerTests(unittest.TestCase):
         self.assertNotIn("canary-invalid-key", stderr.getvalue())
 
     def test_workflow_is_dispatch_only_and_secrets_are_role_scoped(self):
-        workflow = yaml.safe_load((ROOT / ".github/workflows/issue-credentials.yml").read_text())
+        workflow = yaml.safe_load((ROOT / ".github/workflows/r2-credential-check.yml").read_text())
         self.assertEqual(set(workflow["on"]), {"workflow_dispatch"})
         serialized = json.dumps(workflow)
         for forbidden in ("pull_request", "pull_request_target", "workflow_run", "secrets: inherit", "set -x"):
@@ -662,7 +662,7 @@ class IssuerTests(unittest.TestCase):
             self.assertEqual(len(probe_steps), 1)
             self.assertEqual(probe_steps[0]["if"], "${{ inputs.live_probe }}")
             serialized_probe = json.dumps(probe_steps[0])
-            self.assertIn("$RUNNER_TEMP/t07-credentials.json", serialized_probe)
+            self.assertIn("$RUNNER_TEMP/check-credentials.json", serialized_probe)
             self.assertNotIn("secrets.", serialized_probe)
             self.assertIn("inputs.expiry_check", serialized_probe)
             self.assertEqual(probe_steps[0]["env"]["RELEASE_EXPIRY_CHECK"], "${{ inputs.expiry_check }}")

@@ -18,13 +18,13 @@ REPOSITORY = "luminusOS/flatpak-repo"
 
 def valid_environment(**overrides):
     values = {
-        "T06_GITHUB_REPOSITORY": "luminusOS/flatpak-repo",
-        "T06_GITHUB_REF": "refs/heads/main",
-        "T06_GITHUB_REF_PROTECTED": "true",
-        "T06_GITHUB_EVENT_NAME": "workflow_dispatch",
-        "T06_ENVIRONMENT": "issuer-stable",
-        "T06_CANARY": CANARY,
-        "T06_CANARY_SHA256": "2b8fe48f2f758de7a9f3f43239da7c316784e6db55e1a5999758b70abdcd8e74",
+        "GATE_GITHUB_REPOSITORY": "luminusOS/flatpak-repo",
+        "GATE_GITHUB_REF": "refs/heads/main",
+        "GATE_GITHUB_REF_PROTECTED": "true",
+        "GATE_GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GATE_ENVIRONMENT": "issuer-stable",
+        "GATE_CANARY": CANARY,
+        "GATE_CANARY_SHA256": "2b8fe48f2f758de7a9f3f43239da7c316784e6db55e1a5999758b70abdcd8e74",
     }
     values.update(overrides)
     return values
@@ -60,11 +60,11 @@ class SigningEnvironmentTests(unittest.TestCase):
 
     def test_rejects_untrusted_repository_ref_event_environment_and_channel(self):
         for overrides, role, channel in (
-            ({"T06_GITHUB_REPOSITORY": "attacker/fork"}, "issuer", "stable"),
-            ({"T06_GITHUB_REF": "refs/pull/1/merge"}, "issuer", "stable"),
-            ({"T06_GITHUB_REF_PROTECTED": "false"}, "issuer", "stable"),
-            ({"T06_GITHUB_EVENT_NAME": "pull_request"}, "issuer", "stable"),
-            ({"T06_ENVIRONMENT": "issuer-testing"}, "issuer", "stable"),
+            ({"GATE_GITHUB_REPOSITORY": "attacker/fork"}, "issuer", "stable"),
+            ({"GATE_GITHUB_REF": "refs/pull/1/merge"}, "issuer", "stable"),
+            ({"GATE_GITHUB_REF_PROTECTED": "false"}, "issuer", "stable"),
+            ({"GATE_GITHUB_EVENT_NAME": "pull_request"}, "issuer", "stable"),
+            ({"GATE_ENVIRONMENT": "issuer-testing"}, "issuer", "stable"),
             ({}, "publisher", "stable"),
             ({}, "issuer", "preview"),
         ):
@@ -75,9 +75,9 @@ class SigningEnvironmentTests(unittest.TestCase):
 
     def test_rejects_missing_malformed_or_mismatched_canary_without_disclosing_it(self):
         for overrides in (
-            {"T06_CANARY": ""},
-            {"T06_CANARY_SHA256": "not-a-digest"},
-            {"T06_CANARY_SHA256": "0" * 64},
+            {"GATE_CANARY": ""},
+            {"GATE_CANARY_SHA256": "not-a-digest"},
+            {"GATE_CANARY_SHA256": "0" * 64},
         ):
             with self.subTest(overrides=overrides), self.assertRaises(ValueError):
                 signing_environment.validate_canary(valid_environment(**overrides))
@@ -95,7 +95,7 @@ class SigningEnvironmentTests(unittest.TestCase):
         self.assertNotIn(CANARY, result.stderr)
 
     def test_workflow_keeps_pull_request_jobs_secretless_and_dispatch_restricted(self):
-        workflow = (ROOT / ".github/workflows/t06-signing-gates.yml").read_text()
+        workflow = (ROOT / ".github/workflows/environment-gates.yml").read_text()
         pr_job = workflow_job(workflow, "pull-request-denial")
         self.assertIn("pull_request:", workflow)
         self.assertNotIn("environment:", pr_job)
@@ -105,13 +105,13 @@ class SigningEnvironmentTests(unittest.TestCase):
 
         for job_id in ("authorize-dispatch", "verify-disposable-canary"):
             assert_dispatch_job_gate(job_id, workflow_job(workflow, job_id))
-        self.assertIn("T06_CANARY", workflow)
+        self.assertIn("GATE_CANARY", workflow)
         self.assertIn("install -d -m 700 /tmp/opencode", workflow)
         self.assertLess(workflow.index("install -d -m 700 /tmp/opencode"),
                         workflow.index("Run repository tests"))
 
     def test_each_dispatch_job_rejects_a_weakened_main_ref_guard(self):
-        workflow = (ROOT / ".github/workflows/t06-signing-gates.yml").read_text()
+        workflow = (ROOT / ".github/workflows/environment-gates.yml").read_text()
         for job_id in ("authorize-dispatch", "verify-disposable-canary"):
             with self.subTest(job_id=job_id):
                 block = workflow_job(workflow, job_id)
@@ -125,7 +125,7 @@ class SigningEnvironmentTests(unittest.TestCase):
                     assert_dispatch_job_gate(job_id, weakened)
 
     def test_authorize_job_installs_test_dependencies_before_running_suite(self):
-        workflow = (ROOT / ".github/workflows/t06-signing-gates.yml").read_text()
+        workflow = (ROOT / ".github/workflows/environment-gates.yml").read_text()
         authorize_job = workflow_job(workflow, "authorize-dispatch")
         venv = "python3 -m venv .venv"
         install = ".venv/bin/python -m pip install --only-binary=:all: -r requirements-dev.txt"

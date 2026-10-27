@@ -36,7 +36,7 @@ class EnvelopeTests(unittest.TestCase):
         self.assertTrue(envelope["synthetic"])
 
     def test_rejects_parent_secret_in_publisher_environment_even_when_empty(self):
-        with mock.patch.dict(os.environ, {"T02_PARENT_CANARY": ""}, clear=False):
+        with mock.patch.dict(os.environ, {"TRANSPORT_PARENT_CANARY": ""}, clear=False):
             with self.assertRaises(transport.TransportError):
                 transport.ensure_publisher_has_no_parent_canary()
 
@@ -128,8 +128,8 @@ class GpgTransportTests(unittest.TestCase):
             "GITHUB_RUN_ATTEMPT": "1",
             "GITHUB_SHA": "c" * 40,
             "GITHUB_REF": "refs/heads/main",
-            "T02_PARENT_CANARY": "e" * 64,
-            "T02_TRANSPORT_KEY": self.key,
+            "TRANSPORT_PARENT_CANARY": "e" * 64,
+            "TRANSPORT_KEY": self.key,
         }
         capsule_path = self.root / "exchange.gpg"
         output = StringIO()
@@ -140,7 +140,7 @@ class GpgTransportTests(unittest.TestCase):
         self.assertNotIn("e" * 64, output.getvalue())
         self.assertNotIn(self.key, output.getvalue())
         publisher_context = {key: value for key, value in context.items()
-                             if key != "T02_PARENT_CANARY"}
+                             if key != "TRANSPORT_PARENT_CANARY"}
         with redirect_stdout(output):
             transport.run_cli(
                 ["consume", "--channel", "testing", "--input", str(capsule_path)],

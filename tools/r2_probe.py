@@ -26,7 +26,7 @@ REGION = "auto"
 SERVICE = "s3"
 TIMEOUT_SECONDS = 12
 MAX_RESPONSE_BYTES = 1024 * 1024
-MARKER = b"luminus-t07-live-probe"
+MARKER = b"luminus-scope-probe"
 DENIED = "HTTP 403"
 
 EXPECTATIONS = {
@@ -210,12 +210,12 @@ def probe(credentials, run_id, attempt, channel, expiry_check=False, client_fact
         raise ProbeError("credential scope mismatch")
     if type(credentials.get("expires_at")) is not int:
         raise ProbeError("credential expiry missing")
-    prefix = f"{channel}/_t07-probe/{run_id}-{attempt}/"
+    prefix = f"{channel}/_scope-probe/{run_id}-{attempt}/"
     other = "testing" if channel == "stable" else "stable"
     nonce = secrets.token_hex(16)
     own = _key(prefix, "object-" + nonce)
     copied, multipart = (_key(prefix, suffix) for suffix in ("copy", "multipart"))
-    foreign = f"{other}/_t07-probe/{run_id}-{attempt}/absent-{nonce}"
+    foreign = f"{other}/_scope-probe/{run_id}-{attempt}/absent-{nonce}"
     report = []
     created = set()
     upload_id = None
@@ -359,7 +359,7 @@ def probe(credentials, run_id, attempt, channel, expiry_check=False, client_fact
             cases = [
                 ("put_other_channel_denied", lambda: negative_put("put_other_channel_denied", BUCKET, foreign)),
                 ("put_root_denied", lambda: negative_put("put_root_denied", BUCKET,
-                    f"_t07-probe/{run_id}-{attempt}/root-{nonce}")),
+                    f"_scope-probe/{run_id}-{attempt}/root-{nonce}")),
                 ("get_other_channel_denied", lambda: client._request("GET", BUCKET, foreign)),
                 ("head_other_channel_denied", lambda: client._request("HEAD", BUCKET, foreign)),
                 ("list_other_channel_denied", lambda: client._request("GET", BUCKET, query={"list-type": "2", "prefix": other + "/"})),
@@ -369,7 +369,7 @@ def probe(credentials, run_id, attempt, channel, expiry_check=False, client_fact
                     headers={"x-amz-copy-source": f"/{BUCKET}/{quote(foreign, safe='/-_.~')}"})),
                 ("delete_other_channel_denied", lambda: client._request("DELETE", BUCKET, foreign)),
                 ("put_other_bucket_denied", lambda: negative_put("put_other_bucket_denied", OTHER_BUCKET,
-                    f"{channel}/_t07-probe/{run_id}-{attempt}/absent-{nonce}")),
+                    f"{channel}/_scope-probe/{run_id}-{attempt}/absent-{nonce}")),
                 ("list_buckets_denied", lambda: client._request("GET")),
                 ("list_bucket_level_denied", lambda: client._request("GET", BUCKET, query={"uploads": ""})),
             ]
@@ -449,7 +449,7 @@ def main(argv=None):
         summary = os.environ.get("GITHUB_STEP_SUMMARY")
         if summary:
             with open(summary, "a", encoding="utf-8") as output:
-                output.write("## T07 live R2 scope probe\n\n| Operation | Expected | Observed HTTP | Result |\n|---|---|---:|---|\n")
+                output.write("## R2 credential scope probe\n\n| Operation | Expected | Observed HTTP | Result |\n|---|---|---:|---|\n")
                 for item in result["operations"]:
                     output.write(f"| {item['name']} | {item['expected']} | {item['observed']} | {'PASS' if item['pass'] else 'FAIL'} |\n")
         if result.get("expiry_result") == "expired or nearly expired before probe; retry":

@@ -166,7 +166,7 @@ class ImporterContractTests(unittest.TestCase):
             merge_bundles("unused", {}, rc, sign=False)
 
     def test_gpg_home_requires_verified_tmpfs(self):
-        with tempfile.TemporaryDirectory(prefix="t09-gpg-home-", dir="/dev/shm") as tmpfs_home:
+        with tempfile.TemporaryDirectory(prefix="publish-gpg-home-", dir="/dev/shm") as tmpfs_home:
             self.assertEqual(verify_tmpfs(tmpfs_home), Path(tmpfs_home))
         with self.assertRaisesRegex(ImporterError, "tmpfs"):
             verify_tmpfs(Path(__file__).resolve().parents[1])
@@ -334,13 +334,13 @@ class ImporterContractTests(unittest.TestCase):
 class RealFlatpakImportTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp = tempfile.TemporaryDirectory(prefix="t09-flatpak-tools-", dir="/tmp/opencode")
+        cls.temp = tempfile.TemporaryDirectory(prefix="publish-flatpak-tools-", dir="/tmp/opencode")
         cls.root = Path(cls.temp.name)
         cls.gpg_home = cls.root / "gpg"
         cls.gpg_home.mkdir(mode=0o700)
         cls.env = {**os.environ, "GNUPGHOME": str(cls.gpg_home), "LC_ALL": "C"}
         subprocess.run(["gpg", "--batch", "--passphrase", "", "--quick-generate-key",
-                        "Luminus T09 fixture <t09@example.invalid>", "rsa1024", "sign", "1d"],
+                        "Luminus fixture <fixture@example.invalid>", "rsa1024", "sign", "1d"],
                        env=cls.env, check=True, capture_output=True)
         listing = subprocess.run(["gpg", "--batch", "--with-colons", "--fingerprint", "--list-keys"],
                                 env=cls.env, check=True, capture_output=True, text=True)
@@ -392,7 +392,7 @@ class RealFlatpakImportTests(unittest.TestCase):
         cls.temp.cleanup()
 
     def setUp(self):
-        self.work = tempfile.TemporaryDirectory(prefix="t09-case-", dir=self.root)
+        self.work = tempfile.TemporaryDirectory(prefix="publish-case-", dir=self.root)
         self.root_case = Path(self.work.name)
         self.repo = self.root_case / "shared-repo"
         subprocess.run(["ostree", "init", "--repo", str(self.repo), "--mode=archive-z2"], check=True,
@@ -1076,10 +1076,10 @@ class RealFlatpakImportTests(unittest.TestCase):
         home = self.root_case / "flatpak-home"
         env = {**self.env, "XDG_DATA_HOME": str(home / "data"), "XDG_CONFIG_HOME": str(home / "config")}
         subprocess.run(["flatpak", "remote-add", "--user", "--gpg-import", str(self.trust_path),
-                        "t09-fixture", "file://" + str(self.repo)], env=env, check=True, capture_output=True)
+                        "publish-fixture", "file://" + str(self.repo)], env=env, check=True, capture_output=True)
         result = subprocess.run(["flatpak", "remote-ls", "--user", "--app", "--show-details",
                                  "--arch=*",
-                                 "t09-fixture"], env=env, check=True, capture_output=True, text=True)
+                                 "publish-fixture"], env=env, check=True, capture_output=True, text=True)
         self.assertIn(app, result.stdout)
         self.assertIn("x86_64", result.stdout)
         self.assertIn("aarch64", result.stdout)

@@ -1,4 +1,4 @@
-name: T06 signing environment canaries
+name: Check environment protections
 
 on:
   pull_request:
@@ -23,11 +23,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: t06-signing-gates-${{ github.ref }}
+  group: environment-gates-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   pull-request-denial:
+    name: Pull requests cannot enter environments
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -45,6 +46,7 @@ jobs:
           echo 'Pull request context denied; no signing environment was requested.'
 
   authorize-dispatch:
+    name: Authorize dispatch
     if: >-
       github.event_name == 'workflow_dispatch' &&
       github.repository == 'luminusOS/flatpak-repo' &&
@@ -59,14 +61,14 @@ jobs:
           persist-credentials: false
       - name: Validate trusted dispatch context
         env:
-          T06_GITHUB_REPOSITORY: ${{ github.repository }}
-          T06_GITHUB_REF: ${{ github.ref }}
-          T06_GITHUB_REF_PROTECTED: ${{ github.ref_protected }}
-          T06_GITHUB_EVENT_NAME: ${{ github.event_name }}
-          T06_ENVIRONMENT: ${{ inputs.role }}-${{ inputs.channel }}
-          T06_ROLE: ${{ inputs.role }}
-          T06_CHANNEL: ${{ inputs.channel }}
-        run: python3 -B tools/signing_environment.py context --role "$T06_ROLE" --channel "$T06_CHANNEL"
+          GATE_GITHUB_REPOSITORY: ${{ github.repository }}
+          GATE_GITHUB_REF: ${{ github.ref }}
+          GATE_GITHUB_REF_PROTECTED: ${{ github.ref_protected }}
+          GATE_GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GATE_ENVIRONMENT: ${{ inputs.role }}-${{ inputs.channel }}
+          GATE_ROLE: ${{ inputs.role }}
+          GATE_CHANNEL: ${{ inputs.channel }}
+        run: python3 -B tools/signing_environment.py context --role "$GATE_ROLE" --channel "$GATE_CHANNEL"
       - name: Prepare disposable signing fixtures
         run: install -d -m 700 /tmp/opencode
       - name: Install test dependencies
@@ -77,6 +79,7 @@ jobs:
         run: .venv/bin/python -B -m unittest discover -s tests -p 'test_*.py' -v
 
   verify-disposable-canary:
+    name: Verify environment canary
     needs: authorize-dispatch
     if: >-
       needs.authorize-dispatch.result == 'success' &&
@@ -95,13 +98,13 @@ jobs:
           persist-credentials: false
       - name: Verify only the disposable canary
         env:
-          T06_GITHUB_REPOSITORY: ${{ github.repository }}
-          T06_GITHUB_REF: ${{ github.ref }}
-          T06_GITHUB_REF_PROTECTED: ${{ github.ref_protected }}
-          T06_GITHUB_EVENT_NAME: ${{ github.event_name }}
-          T06_ENVIRONMENT: ${{ inputs.role }}-${{ inputs.channel }}
-          T06_CANARY: ${{ secrets.T06_CANARY }}
-          T06_CANARY_SHA256: ${{ vars.T06_CANARY_SHA256 }}
-          T06_ROLE: ${{ inputs.role }}
-          T06_CHANNEL: ${{ inputs.channel }}
-        run: python3 -B tools/signing_environment.py check --role "$T06_ROLE" --channel "$T06_CHANNEL"
+          GATE_GITHUB_REPOSITORY: ${{ github.repository }}
+          GATE_GITHUB_REF: ${{ github.ref }}
+          GATE_GITHUB_REF_PROTECTED: ${{ github.ref_protected }}
+          GATE_GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GATE_ENVIRONMENT: ${{ inputs.role }}-${{ inputs.channel }}
+          GATE_CANARY: ${{ secrets.GATE_CANARY }}
+          GATE_CANARY_SHA256: ${{ vars.GATE_CANARY_SHA256 }}
+          GATE_ROLE: ${{ inputs.role }}
+          GATE_CHANNEL: ${{ inputs.channel }}
+        run: python3 -B tools/signing_environment.py check --role "$GATE_ROLE" --channel "$GATE_CHANNEL"

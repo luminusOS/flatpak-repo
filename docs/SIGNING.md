@@ -30,7 +30,7 @@ consumers will receive fresh revocation information.
 
 ## Production key ceremony
 
-Do not run the following steps until T06a has been independently reviewed and
+Do not run the following steps until the local rehearsal has been independently reviewed and
 the user has approved the ceremony. Choose the final user ID and key expiration
 at that time. Use a new private home outside the checkout for each format and
 channel. Never send a passphrase through chat, a command argument, or an
@@ -65,7 +65,7 @@ Keep the primary private key and its backup under the custodian's control.
 Create an encrypted offline backup, store the revocation certificate separately
 and securely, then verify restoration into a new offline test home. Confirm that
 the restored primary is a real secret key and can certify a test key there. Never
-restore the primary private key into CI. Keep T02 credentials out of this
+restore the primary private key into CI. Keep the credential-proof secrets out of this
 ceremony.
 
 Only after backup and restore checks, export the public key and the selected

@@ -25,8 +25,8 @@ MAX_CIPHERTEXT_BYTES = 64 * 1024
 MAX_PLAINTEXT_BYTES = 8 * 1024
 GPG_TIMEOUT_SECONDS = 15
 GPG_BINARY = "/usr/bin/gpg"
-SECRET_ENV = "T02_TRANSPORT_KEY"
-PARENT_ENV = "T02_PARENT_CANARY"
+SECRET_ENV = "TRANSPORT_KEY"
+PARENT_ENV = "TRANSPORT_PARENT_CANARY"
 _HEX_64 = re.compile(r"[0-9a-fA-F]{64}\Z")
 _HEX_SHA = re.compile(r"[0-9a-fA-F]{40,64}\Z")
 _NONCE = re.compile(r"[A-Za-z0-9_-]{32}\Z")
@@ -173,7 +173,7 @@ def _gpg(data, passphrase, operation):
     if operation not in ("encrypt", "decrypt"):
         raise TransportError("Cryptographic operation is invalid")
     try:
-        with tempfile.TemporaryDirectory(prefix="t02-gpg-") as home:
+        with tempfile.TemporaryDirectory(prefix="transport-gpg-") as home:
             os.chmod(home, 0o700)
             read_fd, write_fd = os.pipe()
             try:
