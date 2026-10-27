@@ -68,6 +68,12 @@ clients check against commit checksums but which could be published as
 unneeded files. The listing permission of the scoped credentials is covered by
 the live probe only for narrower prefixes, so the first real run confirms it.
 
+Flatpak clients verify every commit, not only the summary. The publisher
+therefore signs the commit of each application ref with the channel subkey before
+it updates the summary, and clients configured with the channel key reject a
+commit that carries no signature from that key. Found by installing from the
+published testing channel with the real `flatpak` command.
+
 After consuming the capsule, publisher imports the channel signing subkey into
 a mode-0700 GnuPG home on `/dev/shm`; it verifies the filesystem type is `tmpfs`
 before using the key. An unconditional cleanup kills `gpg-agent` and removes
