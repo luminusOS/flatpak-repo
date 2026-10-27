@@ -652,6 +652,8 @@ def fetch_release(descriptor, work_dir):
 
 def prepare_release(descriptor_path, repo, work_dir, *, allow_empty_repo=False):
     descriptor = json.loads(Path(descriptor_path).read_text(encoding="utf-8"))
+    if allow_empty_repo and not verify_public_empty(descriptor.get("channel")):
+        raise ImporterError("first publish was claimed but the public repository is not empty")
     verify_mirrored_repo(repo, descriptor.get("channel"),
                          allow_empty=allow_empty_repo)
     snapshot_base_auth(repo, Path(work_dir) / BASE_AUTH_DIR)
