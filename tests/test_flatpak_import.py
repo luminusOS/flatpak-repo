@@ -17,7 +17,7 @@ from tools.flatpak_import import (
     validate_rc_channel, verify_tmpfs, verify_mirrored_repo, sign_staged_repo,
     BASE_AUTH_DIR, snapshot_base_auth, verify_stage, _version_rules, changed_files,
     SigV4Storage, plan_upload_files, prune_unreachable, publish_repo, is_mutable_key,
-    prepare_release,
+    prepare_release, public_request, verify_public_empty, verify_public_object, USER_AGENT,
 )
 
 
@@ -46,6 +46,33 @@ def manifest(arch_files=None):
             for index, (arch, (filename, data)) in enumerate(arch_files.items(), start=1)
         },
     }
+
+
+class PublicReadTests(unittest.TestCase):
+    def test_public_reads_identify_themselves_because_the_cdn_rejects_the_default_agent(self):
+        request = public_request("https://flatpak.luminusos.org/testing/summary")
+        self.assertEqual(request.get_header("User-agent"), USER_AGENT)
+        self.assertNotIn("Python-urllib", USER_AGENT)
+
+    def test_empty_check_and_object_verification_send_the_agent_and_fail_closed_on_403(self):
+        seen = []
+
+        class Opener:
+            def __init__(self, code):
+                self.code = code
+
+            def open(self, request, timeout):
+                seen.append(request.get_header("User-agent"))
+                raise HTTPError(request.full_url, self.code, "x", Message(), BytesIO())
+
+        with patch("tools.flatpak_import.build_opener", return_value=Opener(404)):
+            self.assertTrue(verify_public_empty("testing"))
+        with patch("tools.flatpak_import.build_opener", return_value=Opener(403)):
+            self.assertFalse(verify_public_empty("testing"))
+            with patch("tools.flatpak_import.time.sleep"):
+                self.assertFalse(verify_public_object("testing/summary", b"x"))
+        self.assertTrue(seen)
+        self.assertEqual(set(seen), {USER_AGENT})
 
 
 class ImporterCommandLineTests(unittest.TestCase):
