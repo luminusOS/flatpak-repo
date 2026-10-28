@@ -26,7 +26,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y flatpak ostree gnupg
       - name: Prepare disposable signing fixture root
-        run: install -d -m 700 /tmp/opencode
+        run: |
+          sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" /tmp/opencode
+          sudo mount -t tmpfs -o mode=700,uid="$(id -u)",gid="$(id -g)" tmpfs /tmp/opencode
       - name: Check frozen artifact contracts
         run: .venv/bin/python -B -m unittest discover -s contracts -p 'test_*.py' -v
       - name: Check catalog and repository tools
