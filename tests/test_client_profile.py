@@ -17,7 +17,7 @@ FIXTURE_ROOT = "/tmp/opencode" if os.path.isdir("/tmp/opencode") else None
 @unittest.skipUnless(all(shutil.which(tool) for tool in ("ostree", "flatpak", "gpg")),
                      "local Flatpak, OSTree and GnuPG tools are required")
 class ClientProfileTests(unittest.TestCase):
-    """Runs the commands from docs/CLIENTS.md against a disposable Flatpak profile."""
+    """Runs the Flatpak operations from docs/CLIENTS.md against a disposable profile and a local repository."""
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="client-", dir=FIXTURE_ROOT)

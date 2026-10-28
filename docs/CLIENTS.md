@@ -64,12 +64,19 @@ flatpak run org.luminusos.Aetheris//stable
 ```
 
 Both branches use the same data directory. To leave testing, install the stable
-branch and uninstall the testing one. To return, do the same in the other
-direction:
+branch and uninstall the testing one. To return to testing, do the opposite:
 
 ```sh
+# leave testing
+flatpak install --user luminus org.luminusos.Aetheris//stable
 flatpak uninstall --user org.luminusos.Aetheris//testing
+
+# return to testing
+flatpak install --user luminus-testing org.luminusos.Aetheris//testing
+flatpak uninstall --user org.luminusos.Aetheris//stable
 ```
+
+Installing the new branch first keeps the application available the whole time.
 
 A newer testing build can write data that an older stable build does not read.
 Nothing downgrades an application automatically; keep a copy of
@@ -83,8 +90,10 @@ Nothing downgrades an application automatically; keep a copy of
 - Installing from the testing remote through the public domain verifies the
   signed commit and the application starts. The `aarch64` ref installs and its
   binary is an `aarch64` executable; it has not been run on `aarch64`.
-- `tests/test_client_profile.py` runs the commands above against a disposable
-  profile and a local signed repository built from the catalog: both
+- `tests/test_client_profile.py` runs the same Flatpak operations against a
+  disposable profile and a local signed repository built from the catalog
+  (the `.flatpakref` and `.flatpakrepo` files themselves are covered by
+  `tests/test_descriptors.py`): both
   applications on both architectures, updating one application while the other
   stays untouched, moving a bundle to a remote with `--reinstall`, running
   both channels side by side, and refusing a remote with the wrong key.
