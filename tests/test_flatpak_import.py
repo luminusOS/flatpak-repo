@@ -16,7 +16,7 @@ from tools.flatpak_import import (
     inspect_bundle, merge_bundles, validate_manifest, verify_artifact, parse_checksums, list_flatpak_artifacts, build_manifest, fetch_release,
     validate_rc_channel, verify_tmpfs, verify_mirrored_repo, sign_staged_repo,
     BASE_AUTH_DIR, snapshot_base_auth, verify_stage, _version_rules, changed_files,
-    SigV4Storage, plan_upload_files, prune_unreachable, publish_repo, is_mutable_key,
+    SigV4Storage, descriptor_files, plan_upload_files, prune_unreachable, publish_repo, is_mutable_key,
     prepare_release, restore_repo_skeleton, drop_static_deltas, public_request, verify_public_empty, verify_public_object, USER_AGENT,
 )
 
@@ -911,6 +911,17 @@ class RealFlatpakImportTests(unittest.TestCase):
         self.assertFalse(set(files) & set(immutable))
         self.assertIn("testing/summary", files)
         self.assertIn("testing/luminus-imports.json", files)
+
+    def test_descriptors_are_published_with_the_channel_as_mutable_files(self):
+        work, release, bundles = self.staged_case()
+        extra = descriptor_files("testing")
+        self.assertIn("luminus-testing.flatpakrepo", extra)
+        self.assertIn("org.luminusos.Aetheris.flatpakref", extra)
+        files = plan_upload_files(self.repo, "testing", {}, extra=extra)
+        for name in extra:
+            self.assertIn("testing/" + name, files)
+            self.assertTrue(is_mutable_key("testing/" + name))
+        self.assertNotIn("stable/luminus-stable.flatpakrepo", files)
 
     def test_a_published_object_with_a_different_size_is_rejected(self):
         work, release, bundles = self.staged_case()

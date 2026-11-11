@@ -39,7 +39,8 @@ def _checked_key(channel, key):
 def is_mutable_key(key):
     path = key.split("/", 1)[-1]
     return (path in MUTABLE_NAMES or path.startswith("refs/") or path.startswith("appstream/")
-            or path.endswith(".commitmeta") or path.startswith("summary"))
+            or path.endswith(".commitmeta") or path.startswith("summary")
+            or path.endswith((".flatpakrepo", ".flatpakref")))
 
 
 def build_upload_plan(channel, files):
