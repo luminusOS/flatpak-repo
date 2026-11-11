@@ -816,8 +816,14 @@ class SigV4Storage:
         raise ImporterError("R2 listing is too large")
 
 
-def plan_upload_files(repo, channel, remote_sizes):
-    files = {}
+def descriptor_files(channel, root=None):
+    directory = Path(root or Path(__file__).resolve().parents[1]) / "descriptors" / channel
+    return {path.name: path.read_bytes() for path in sorted(directory.glob("*"))
+            if path.is_file() and path.suffix in (".flatpakrepo", ".flatpakref")}
+
+
+def plan_upload_files(repo, channel, remote_sizes, extra=None):
+    files = {channel + "/" + name: content for name, content in (extra or {}).items()}
     for relative, content in changed_files(repo, {}).items():
         key = channel + "/" + relative
         if is_mutable_key(key):
@@ -864,7 +870,8 @@ def publish_repo(repo, channel, credentials_path, *, storage=None, public_verify
     if storage is None:
         storage = SigV4Storage(issuer.BUCKET, f"https://{account}.r2.cloudflarestorage.com", credentials)
     verify = public_verify or verify_public_object
-    files = plan_upload_files(repo, channel, storage.list_keys(channel + "/"))
+    files = plan_upload_files(repo, channel, storage.list_keys(channel + "/"),
+                              extra=descriptor_files(channel))
     plan = build_upload_plan(channel, files)
     publish_uploads(channel, files, storage, verify,
                     expires_at=credentials["expires_at"],
