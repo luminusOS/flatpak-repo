@@ -134,6 +134,17 @@ class ImporterContractTests(unittest.TestCase):
                          "version": "1.5.1-rc.1"})
         self.assertEqual(rc.asset_urls["x86_64"].rsplit("/", 1)[1], "aetheris-1.5.1-rc1-linux-x86_64.flatpak")
 
+    def test_deskunion_assets_use_its_names_and_its_checksum_file(self):
+        plan = fetch_plan({**descriptor(), "package_id": "io.github.luminusos.DeskUnion", "tag": "v0.3.0",
+                           "version": "0.3.0"})
+        self.assertEqual(plan.repository, "luminusOS/deskunion")
+        self.assertEqual(plan.asset_urls["aarch64"],
+                         "https://github.com/luminusOS/deskunion/releases/download/v0.3.0/"
+                         "deskunion-0.3.0-linux-aarch64.flatpak")
+        self.assertEqual(plan.asset_urls["x86_64"].rsplit("/", 1)[1], "deskunion-0.3.0-linux-x86_64.flatpak")
+        self.assertEqual(plan.checksums_url,
+                         "https://github.com/luminusOS/deskunion/releases/download/v0.3.0/SHA256SUMS.txt")
+
     def test_manifest_matches_release_descriptor_and_two_architectures(self):
         self.assertEqual(validate_manifest(manifest(), descriptor())["version"], "1.2.3-rc.1")
 
