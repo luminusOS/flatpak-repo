@@ -13,6 +13,7 @@ import secrets
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from urllib import request as urllib_request
 from urllib.error import HTTPError, URLError
@@ -242,24 +243,28 @@ def fetch_github_json(path, token=None, opener=None):
     return _parse_github_body(body)
 
 
-def fetch_github_json_with_gh(path, environ=None, run=subprocess.run):
-    """Reads `path` through the GitHub CLI with the workflow's read-only
-    GH_TOKEN. Unauthenticated requests share the runner IP's limit of 60 per
-    hour, which other repositories exhaust."""
+def fetch_github_json_with_gh(path, token, run=subprocess.run):
+    """Reads `path` through the GitHub CLI with the workflow's read-only token.
+    Unauthenticated requests share the runner IP's limit of 60 an hour, which
+    other repositories exhaust. gh gets an empty config directory and no HOME,
+    so no host, alias or socket setting can redirect it. Unlike
+    fetch_github_json, gh follows redirects; it drops the token when the host
+    changes, and these endpoints do not redirect."""
     _check_github_path(path)
-    environ = os.environ if environ is None else environ
-    token = environ.get("GH_TOKEN")
     if not isinstance(token, str) or not token:
         raise IssuerError("Source run request is invalid")
-    env = {"GH_TOKEN": token, "GH_HOST": "github.com", "GH_PROMPT_DISABLED": "1", "NO_COLOR": "1",
-           "PATH": environ.get("PATH", "/usr/bin:/bin")}
-    if environ.get("HOME"):
-        env["HOME"] = environ["HOME"]
     command = ["gh", "api", "--method", "GET", "-H", "Accept: application/vnd.github+json",
-               "-H", f"X-GitHub-Api-Version: {GITHUB_API_VERSION}", path]
+               "-H", f"X-GitHub-Api-Version: {GITHUB_API_VERSION}"]
+    if path.endswith("/artifacts"):
+        command += ["-F", "per_page=100"]
+    command.append(path)
     try:
-        completed = run(command, env=env, capture_output=True, timeout=GITHUB_TIMEOUT_SECONDS * 4,
-                        check=False)
+        with tempfile.TemporaryDirectory(prefix="gh-config-") as config:
+            env = {"GH_TOKEN": token, "GH_HOST": "github.com", "GH_CONFIG_DIR": config,
+                   "GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "NO_COLOR": "1",
+                   "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+            completed = run(command, env=env, capture_output=True,
+                            timeout=GITHUB_TIMEOUT_SECONDS * 4, check=False)
     except (OSError, subprocess.SubprocessError):
         raise IssuerError("Source run lookup failed") from None
     if completed.returncode != 0:
@@ -267,10 +272,14 @@ def fetch_github_json_with_gh(path, environ=None, run=subprocess.run):
     return _parse_github_body(completed.stdout)
 
 
-def github_json_fetcher(environ=None):
-    environ = os.environ if environ is None else environ
-    if environ.get("GH_TOKEN"):
-        return lambda path: fetch_github_json_with_gh(path, environ)
+def github_json_fetcher(token, require=False):
+    """The fetcher for source lookups: gh with `token`, or the unauthenticated
+    request for local runs. `require` refuses the latter, so a workflow that
+    lost its token fails with that reason instead of a rate limit."""
+    if token:
+        return lambda path: fetch_github_json_with_gh(path, token)
+    if require:
+        raise IssuerError("GH_TOKEN is required for source lookups in GitHub Actions")
     return fetch_github_json
 
 
