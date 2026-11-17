@@ -33,50 +33,18 @@ SOURCE_FIXTURES = {
     "sirius-installer": ("luminusOS/sirius", ".github/workflows/ci.yml",
                           ".github/workflows/ci.yml", "rpm"),
 }
-# DeskUnion has no captured run yet: modeled on the Aetheris run shape, replace after its first release.
-REAL_SOURCE_RUNS = {
-    "dev.luminusos.ZapTide": {
-        "id": 40045135138, "event": "push", "head_branch": "v0.7.3",
-        "head_sha": "8f1ac14f366f52b86389961ce82ceb7898ee75b7",
-        "path": ".github/workflows/release.yml", "run_attempt": 1,
-        "status": "completed", "conclusion": "success",
-        "repository": {"full_name": "luminusOS/zaptide"},
-        "referenced_workflows": [
-            {"path": "luminusOS/zaptide/.github/workflows/release-appimage.yml@8f1ac14f366f52b86389961ce82ceb7898ee75b7",
-             "ref": "refs/tags/v0.7.3", "sha": "8f1ac14f366f52b86389961ce82ceb7898ee75b7"},
-            {"path": "luminusOS/zaptide/.github/workflows/ci.yml@8f1ac14f366f52b86389961ce82ceb7898ee75b7",
-             "ref": "refs/tags/v0.7.3", "sha": "8f1ac14f366f52b86389961ce82ceb7898ee75b7"},
-        ],
-    },
-    "org.luminusos.Aetheris": {
-        "id": 32636733386, "event": "push", "head_branch": "v1.5.0",
-        "head_sha": "b3ac2820bdf2bb11dbf4a4639d9a962f96630c33",
-        "path": ".github/workflows/release.yml", "run_attempt": 1,
-        "status": "completed", "conclusion": "success",
-        "repository": {"full_name": "luminusOS/aetheris"},
-        "referenced_workflows": [
-            {"path": "luminusOS/aetheris/.github/workflows/release-flatpak.yml@b3ac2820bdf2bb11dbf4a4639d9a962f96630c33",
-             "ref": "refs/tags/v1.5.0", "sha": "b3ac2820bdf2bb11dbf4a4639d9a962f96630c33"},
-        ],
-    },
-    "org.luminusos.DeskUnion": {
-        "id": 40000000001, "event": "push", "head_branch": "v0.3.0",
-        "head_sha": "d" * 40,
-        "path": ".github/workflows/release.yml", "run_attempt": 1,
-        "status": "completed", "conclusion": "success",
-        "repository": {"full_name": "luminusOS/deskunion"},
-        "referenced_workflows": [
-            {"path": "luminusOS/deskunion/.github/workflows/release-flatpak.yml@" + "d" * 40,
-             "ref": "refs/tags/v0.3.0", "sha": "d" * 40},
-        ],
-    },
-    "sirius-installer": {
-        "id": 35161979157, "event": "push", "head_branch": "v1.0.4",
-        "head_sha": "a" * 40, "path": ".github/workflows/ci.yml",
-        "run_attempt": 1, "status": "completed", "conclusion": "success",
-        "repository": {"full_name": "luminusOS/sirius"},
-        "referenced_workflows": [],
-    },
+CAPTURED_ZAPTIDE_RUN = {
+    "id": 40045135138, "event": "push", "head_branch": "v0.7.3",
+    "head_sha": "8f1ac14f366f52b86389961ce82ceb7898ee75b7",
+    "path": ".github/workflows/release.yml", "run_attempt": 1,
+    "status": "completed", "conclusion": "success",
+    "repository": {"full_name": "luminusOS/zaptide"},
+    "referenced_workflows": [
+        {"path": "luminusOS/zaptide/.github/workflows/release-appimage.yml@8f1ac14f366f52b86389961ce82ceb7898ee75b7",
+         "ref": "refs/tags/v0.7.3", "sha": "8f1ac14f366f52b86389961ce82ceb7898ee75b7"},
+        {"path": "luminusOS/zaptide/.github/workflows/ci.yml@8f1ac14f366f52b86389961ce82ceb7898ee75b7",
+         "ref": "refs/tags/v0.7.3", "sha": "8f1ac14f366f52b86389961ce82ceb7898ee75b7"},
+    ],
 }
 
 
@@ -156,13 +124,11 @@ class IssuerTests(unittest.TestCase):
     def test_source_run_accepts_only_contract_sources_and_records_attempt(self):
         allowed = [(app, details) for app, details in SOURCE_FIXTURES.items()
                    if details[3] == issuer.FORMAT]
-        for app, (repository, caller_workflow, contract_workflow, _) in allowed:
-            run = copy.deepcopy(REAL_SOURCE_RUNS[app])
-            descriptor = {**self.descriptor, "package_id": app,
-                          "source_run_id": str(run["id"]),
-                          "source_run_attempt": run.get("run_attempt", 1),
-                          "git_sha": run["head_sha"],
-                          "version": run["head_branch"].removeprefix("v")}
+        for index, (app, (repository, caller_workflow, contract_workflow, _)) in enumerate(allowed, 1):
+            descriptor = {**self.descriptor, "package_id": app, "source_run_id": str(1000 + index),
+                          "source_run_attempt": 1, "version": "2.4.6",
+                          "git_sha": hashlib.sha1(app.encode()).hexdigest()}
+            run = source_run(descriptor)
             fetcher, calls = self.fake_fetcher(run)
             verified = issuer.verify_source_run(descriptor, issuer.FORMAT, "stable", fetcher)
             self.assertEqual(verified["source_run_attempt"], descriptor["source_run_attempt"])
@@ -176,6 +142,14 @@ class IssuerTests(unittest.TestCase):
                                                     issuer.FORMAT, "stable", now=1700000000)
             envelope = issuer.build_envelope(self.binding, verified, credentials, now=1700000000)
             self.assertEqual(envelope["descriptor"]["source_run_attempt"], descriptor["source_run_attempt"])
+
+    def test_captured_github_run_shape_is_accepted(self):
+        run = copy.deepcopy(CAPTURED_ZAPTIDE_RUN)
+        descriptor = {**self.descriptor, "package_id": "dev.luminusos.ZapTide",
+                      "source_run_id": str(run["id"]), "source_run_attempt": run["run_attempt"],
+                      "git_sha": run["head_sha"], "version": "0.7.3"}
+        fetcher, _ = self.fake_fetcher(run)
+        self.assertEqual(issuer.verify_source_run(descriptor, "flatpak", "stable", fetcher), descriptor)
 
     def test_reusable_workflow_requires_same_repository_reference_and_matching_sha(self):
         for package_id, repository in (("org.luminusos.Aetheris", "luminusOS/aetheris"),
