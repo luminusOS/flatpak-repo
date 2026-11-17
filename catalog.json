@@ -17,6 +17,13 @@
         "repository": "luminusOS/aetheris",
         "workflow": ".github/workflows/release-flatpak.yml"
       }
+    },
+    {
+      "id": "org.luminusos.DeskUnion",
+      "source": {
+        "repository": "luminusOS/deskunion",
+        "workflow": ".github/workflows/release-flatpak.yml"
+      }
     }
   ]
 }

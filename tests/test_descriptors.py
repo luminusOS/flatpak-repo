@@ -39,6 +39,13 @@ class DescriptorTests(unittest.TestCase):
                      for channel in descriptors.CHANNELS for item in catalog["applications"]}
         self.assertEqual(set(files), expected)
 
+    def test_deskunion_ref_descriptor_is_titled_per_channel(self):
+        for channel, title in (("stable", "DeskUnion"), ("testing", "DeskUnion (testing)")):
+            parser = configparser.ConfigParser(interpolation=None)
+            parser.read_string(descriptors.flatpakref("org.luminusos.DeskUnion", channel))
+            self.assertEqual(parser["Flatpak Ref"]["title"], title)
+            self.assertEqual(parser["Flatpak Ref"]["name"], "org.luminusos.DeskUnion")
+
     def test_repo_descriptor_points_at_the_channel_and_branch(self):
         for channel in descriptors.CHANNELS:
             parser = configparser.ConfigParser(interpolation=None)

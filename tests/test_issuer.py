@@ -28,9 +28,12 @@ SOURCE_FIXTURES = {
                                ".github/workflows/release.yml", "flatpak"),
     "org.luminusos.Aetheris": ("luminusOS/aetheris", ".github/workflows/release.yml",
                                 ".github/workflows/release-flatpak.yml", "flatpak"),
+    "org.luminusos.DeskUnion": ("luminusOS/deskunion", ".github/workflows/release.yml",
+                                ".github/workflows/release-flatpak.yml", "flatpak"),
     "sirius-installer": ("luminusOS/sirius", ".github/workflows/ci.yml",
                           ".github/workflows/ci.yml", "rpm"),
 }
+# DeskUnion has no captured run yet: modeled on the Aetheris run shape, replace after its first release.
 REAL_SOURCE_RUNS = {
     "dev.luminusos.ZapTide": {
         "id": 40045135138, "event": "push", "head_branch": "v0.7.3",
@@ -54,6 +57,17 @@ REAL_SOURCE_RUNS = {
         "referenced_workflows": [
             {"path": "luminusOS/aetheris/.github/workflows/release-flatpak.yml@b3ac2820bdf2bb11dbf4a4639d9a962f96630c33",
              "ref": "refs/tags/v1.5.0", "sha": "b3ac2820bdf2bb11dbf4a4639d9a962f96630c33"},
+        ],
+    },
+    "org.luminusos.DeskUnion": {
+        "id": 40000000001, "event": "push", "head_branch": "v0.3.0",
+        "head_sha": "d" * 40,
+        "path": ".github/workflows/release.yml", "run_attempt": 1,
+        "status": "completed", "conclusion": "success",
+        "repository": {"full_name": "luminusOS/deskunion"},
+        "referenced_workflows": [
+            {"path": "luminusOS/deskunion/.github/workflows/release-flatpak.yml@" + "d" * 40,
+             "ref": "refs/tags/v0.3.0", "sha": "d" * 40},
         ],
     },
     "sirius-installer": {
@@ -164,23 +178,26 @@ class IssuerTests(unittest.TestCase):
             self.assertEqual(envelope["descriptor"]["source_run_attempt"], descriptor["source_run_attempt"])
 
     def test_reusable_workflow_requires_same_repository_reference_and_matching_sha(self):
-        descriptor = {**self.descriptor, "package_id": "org.luminusos.Aetheris"}
-        valid_run = source_run(descriptor)
-        fetcher, _ = self.fake_fetcher(valid_run)
-        self.assertEqual(issuer.verify_source_run(descriptor, "flatpak", "stable", fetcher), descriptor)
-        invalid_references = (
-            [],
-            [{"path": "luminusOS/other/.github/workflows/release-flatpak.yml@refs/tags/v1.2.3",
-              "sha": descriptor["git_sha"], "ref": "refs/tags/v1.2.3"}],
-            [{"path": "luminusOS/aetheris/.github/workflows/release-flatpak.yml@refs/tags/v1.2.3",
-              "sha": "c" * 40, "ref": "refs/tags/v1.2.3"}],
-            [{"path": f"luminusOS/aetheris/.github/workflows/release-flatpak.yml@{descriptor['git_sha']}",
-              "sha": descriptor["git_sha"], "ref": "refs/tags/v9.9.9"}],
-        )
-        for references in invalid_references:
-            fetcher, _ = self.fake_fetcher({**valid_run, "referenced_workflows": references})
-            with self.subTest(references=references), self.assertRaises(issuer.IssuerError):
-                issuer.verify_source_run(descriptor, "flatpak", "stable", fetcher)
+        for package_id, repository in (("org.luminusos.Aetheris", "luminusOS/aetheris"),
+                                       ("org.luminusos.DeskUnion", "luminusOS/deskunion")):
+            descriptor = {**self.descriptor, "package_id": package_id}
+            valid_run = source_run(descriptor)
+            fetcher, _ = self.fake_fetcher(valid_run)
+            self.assertEqual(issuer.verify_source_run(descriptor, "flatpak", "stable", fetcher), descriptor)
+            invalid_references = (
+                [],
+                [{"path": "luminusOS/other/.github/workflows/release-flatpak.yml@refs/tags/v1.2.3",
+                  "sha": descriptor["git_sha"], "ref": "refs/tags/v1.2.3"}],
+                [{"path": f"{repository}/.github/workflows/release-flatpak.yml@refs/tags/v1.2.3",
+                  "sha": "c" * 40, "ref": "refs/tags/v1.2.3"}],
+                [{"path": f"{repository}/.github/workflows/release-flatpak.yml@{descriptor['git_sha']}",
+                  "sha": descriptor["git_sha"], "ref": "refs/tags/v9.9.9"}],
+            )
+            for references in invalid_references:
+                fetcher, _ = self.fake_fetcher({**valid_run, "referenced_workflows": references})
+                with self.subTest(package_id=package_id, references=references), \
+                        self.assertRaises(issuer.IssuerError):
+                    issuer.verify_source_run(descriptor, "flatpak", "stable", fetcher)
 
     def test_real_run_path_uses_caller_workflow_and_tag_ref_proves_tag(self):
         run = source_run(self.descriptor)

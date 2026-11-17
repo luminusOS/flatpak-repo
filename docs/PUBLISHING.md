@@ -50,12 +50,17 @@ The release record is derived, not downloaded. The importer does not read
 release workflow keeps as artifacts of its run and does not attach to the public
 release. It builds the contract manifest itself from the descriptor (whose
 source run the issuer verified), from the bundles it downloaded, from the SHA-256
-of each bundle in the release's `checksums.txt`, and from the public artifact
+of each bundle in the release's checksum file, and from the public artifact
 listing of the source run (`flatpak-<arch>` must exist exactly once per
 architecture and not be expired). The result is validated with the pinned
 contract schema. The Flatpak ref, commit and runtime come from inspecting the
 bundles. What this drops compared with the build-time report is a second,
 independent record of the OSTree commit made during the build.
+
+Each application names its release files in `ASSET_NAMES` and `CHECKSUMS_NAMES`
+in `tools/flatpak_import.py`. The checksum file is `checksums.txt` unless the
+application overrides it; DeskUnion publishes `SHA256SUMS.txt`, whose lines must
+all use plain file names because one unparsable line rejects the whole file.
 
 The prepare artifact is not trusted by the publisher. Prepare saves the signed
 base files (summary, its signatures, and the ledger with its signature) under

@@ -88,7 +88,9 @@ def validate_descriptor(descriptor):
 ASSET_NAMES = {
     "dev.luminusos.ZapTide": "zaptide-{tag}-{arch}.flatpak",
     "org.luminusos.Aetheris": "aetheris-{release}-linux-{arch}.flatpak",
+    "org.luminusos.DeskUnion": "deskunion-{release}-linux-{arch}.flatpak",
 }
+CHECKSUMS_NAMES = {"org.luminusos.DeskUnion": "SHA256SUMS.txt"}
 
 
 def fetch_plan(descriptor):
@@ -100,7 +102,8 @@ def fetch_plan(descriptor):
     base = f"https://github.com/{repository}/releases/download/{checked['tag']}"
     names = {arch: template.format(tag=checked["tag"], release=checked["tag"][1:], arch=arch)
              for arch in ARCHITECTURES}
-    return FetchPlan(repository, checked["tag"], f"{base}/{CHECKSUMS_NAME}",
+    checksums_name = CHECKSUMS_NAMES.get(checked["package_id"], CHECKSUMS_NAME)
+    return FetchPlan(repository, checked["tag"], f"{base}/{checksums_name}",
                      {arch: f"{base}/{name}" for arch, name in names.items()})
 
 

@@ -11,12 +11,13 @@ Before reading parent credentials, the issuer queries the GitHub Actions run API
 It accepts only `push` runs for the package's contract-mapped repository and
 workflow. ZapTide uses `luminusOS/zaptide` and
 `.github/workflows/release.yml`; Aetheris uses `luminusOS/aetheris` and
-`.github/workflows/release-flatpak.yml`; Sirius uses `luminusOS/sirius` and
+`.github/workflows/release-flatpak.yml`; DeskUnion uses `luminusOS/deskunion`
+and `.github/workflows/release-flatpak.yml`; Sirius uses `luminusOS/sirius` and
 `.github/workflows/ci.yml`. ZapTide and Sirius run their contract workflows
-directly. Aetheris records the caller `.github/workflows/release.yml`, so the issuer
-requires `referenced_workflows` to identify
-`luminusOS/aetheris/.github/workflows/release-flatpak.yml` with the descriptor SHA
-and `refs/tags/<tag>` ref.
+directly. Aetheris and DeskUnion record the caller `.github/workflows/release.yml`,
+so the issuer requires `referenced_workflows` to identify
+`luminusOS/<repository>/.github/workflows/release-flatpak.yml` with the descriptor
+SHA and `refs/tags/<tag>` ref.
 The run object must be completed successfully, its ID and caller workflow path must
 match exactly, and its `head_sha`, tag, and version must match the descriptor and
 contract. The caller workflow `path` is the workflow filename only; an earlier

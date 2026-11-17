@@ -20,9 +20,9 @@ LOCK_EXPECTED = {
     "schema_version": 1,
     "source": {"path": "docs/specs/luminus-distribution", "approved": "2026-10-18"},
     "files": {
-        "distribution.schema.json": "a17635d45c5a0f0c2c51a075133f31884ce14cd1393daa20600255836732fe8a",
+        "distribution.schema.json": "7b7910dfc20bfa3c25eaa25f2a67582ff90e6c8b8fe00434fa65eaa93acf931b",
         "distribution_contract.py": "c5675fa4feeb69eca43bd4c7274645a5851a417d9f01acca908535a7dfac59ab",
-        "test_distribution_contract.py": "056048dd5faf28604f88e004a7b94516a6730abba53ee0d58a5c7208212a90ff",
+        "test_distribution_contract.py": "180b3734312fd456bbc57b3ae16e89b93e233b63b89cef494ea295f65bb0afef",
     },
 }
 
@@ -40,6 +40,10 @@ def expected_application_sources(catalog):
             },
             "org.luminusos.Aetheris": {
                 "repository": "luminusOS/aetheris",
+                "workflow": ".github/workflows/release-flatpak.yml",
+            },
+            "org.luminusos.DeskUnion": {
+                "repository": "luminusOS/deskunion",
                 "workflow": ".github/workflows/release-flatpak.yml",
             },
         }
