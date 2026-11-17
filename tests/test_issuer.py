@@ -400,7 +400,8 @@ class IssuerTests(unittest.TestCase):
         self.assertEqual(command[-3:], ["-F", "per_page=100", path])
         env = kwargs["env"]
         self.assertEqual(set(env), {"GH_TOKEN", "GH_HOST", "GH_CONFIG_DIR", "GH_PROMPT_DISABLED",
-                                    "GH_NO_UPDATE_NOTIFIER", "NO_COLOR", "PATH"})
+                                    "GH_NO_UPDATE_NOTIFIER", "NO_COLOR", "PATH", "XDG_CACHE_HOME",
+                                    "XDG_STATE_HOME", "XDG_DATA_HOME"})
         self.assertEqual((env["GH_TOKEN"], env["GH_HOST"]), ("fake-token", "github.com"))
         self.assertTrue(config_existed)
         self.assertEqual(config_entries, [])

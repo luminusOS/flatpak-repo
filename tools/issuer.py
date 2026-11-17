@@ -261,6 +261,7 @@ def fetch_github_json_with_gh(path, token, run=subprocess.run):
     try:
         with tempfile.TemporaryDirectory(prefix="gh-config-") as config:
             env = {"GH_TOKEN": token, "GH_HOST": "github.com", "GH_CONFIG_DIR": config,
+                   "XDG_CACHE_HOME": config, "XDG_STATE_HOME": config, "XDG_DATA_HOME": config,
                    "GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "NO_COLOR": "1",
                    "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
             completed = run(command, env=env, capture_output=True,
