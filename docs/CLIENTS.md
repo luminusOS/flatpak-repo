@@ -16,9 +16,9 @@ are different, and a remote that uses the wrong key is refused. Each
 `.flatpakref` points at the channel's remote and at the Flathub runtime
 repository, so runtimes are resolved from Flathub.
 
-The catalog lists two applications, ZapTide and Aetheris, for `x86_64` and
-`aarch64`. Both share one repository per channel, so one remote offers both and
-publishing one application never removes the other.
+The catalog lists three applications, ZapTide, Aetheris and DeskUnion, for
+`x86_64` and `aarch64`. All share one repository per channel, so one remote
+offers every application and publishing one never removes the others.
 
 ## Add a remote
 

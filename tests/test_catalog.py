@@ -42,6 +42,10 @@ def expected_application_sources(catalog):
                 "repository": "luminusOS/aetheris",
                 "workflow": ".github/workflows/release-flatpak.yml",
             },
+            "io.github.luminusos.DeskUnion": {
+                "repository": "luminusOS/deskunion",
+                "workflow": ".github/workflows/release-flatpak.yml",
+            },
         }
     return {
         "sirius-installer": {

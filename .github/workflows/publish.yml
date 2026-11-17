@@ -11,7 +11,7 @@ name: Publish Flatpak release
         description: Allowlisted application ID
         required: true
         type: choice
-        options: [dev.luminusos.ZapTide, org.luminusos.Aetheris]
+        options: [dev.luminusos.ZapTide, org.luminusos.Aetheris, io.github.luminusos.DeskUnion]
       version:
         description: Normalized release version
         required: true
