@@ -127,6 +127,9 @@ jobs:
             *) exit 1 ;;
           esac
       - name: Verify release, import unsigned commits, and stage repository
+        env:
+          # Read-only; lists the source run's artifacts through `gh api`.
+          GH_TOKEN: ${{ github.token }}
         run: |
           EXTRA=""
           if [ -e /tmp/opencode/luminus-publish/first-publish ]; then EXTRA="--allow-empty-repo"; fi
@@ -287,6 +290,7 @@ jobs:
           GNUPGHOME: /dev/shm/luminus-publish-gnupg
           SIGNING_SUBKEY_FINGERPRINT: ${{ vars.SIGNING_SUBKEY_FINGERPRINT }}
           CREDENTIALS: ${{ runner.temp }}/r2-credentials.json
+          GH_TOKEN: ${{ github.token }}
         run: |
           /tmp/opencode/luminus-publish-venv/bin/python -B tools/flatpak_import.py --mode publish \
             --descriptor /tmp/opencode/luminus-publish/descriptor.json --work-dir /tmp/opencode/luminus-publish \

@@ -11,6 +11,7 @@ import os
 import re
 import secrets
 import stat
+import subprocess
 import sys
 import time
 from urllib import request as urllib_request
@@ -171,7 +172,7 @@ class _NoRedirect(urllib_request.HTTPRedirectHandler):
         return None
 
 
-def fetch_github_json(path, token=None, opener=None):
+def _check_github_path(path):
     allowed_repositories = {entry[0] for entry in SOURCE_RELEASES.values()}
     allowed_path = False
     if isinstance(path, str):
@@ -190,6 +191,27 @@ def fetch_github_json(path, token=None, opener=None):
             break
     if not allowed_path:
         raise IssuerError("Source run request is invalid")
+
+
+def _parse_github_body(body):
+    if not isinstance(body, bytes):
+        raise IssuerError("Source run response is invalid")
+    if len(body) > MAX_GITHUB_RESPONSE_BYTES:
+        raise IssuerError("Source run response exceeds the size limit")
+    try:
+        result = json.loads(body.decode("utf-8"), object_pairs_hook=_strict_object,
+                            parse_constant=_reject_json_constant)
+    except IssuerError:
+        raise
+    except (UnicodeError, ValueError):
+        raise IssuerError("Source run lookup failed") from None
+    if not isinstance(result, dict):
+        raise IssuerError("Source run response is invalid")
+    return result
+
+
+def fetch_github_json(path, token=None, opener=None):
+    _check_github_path(path)
     url = f"https://{GITHUB_API_HOST}{path}"
     headers = {
         "Accept": "application/vnd.github+json",
@@ -209,23 +231,47 @@ def fetch_github_json(path, token=None, opener=None):
             body = response.read(MAX_GITHUB_RESPONSE_BYTES + 1)
         finally:
             response.close()
-        if not isinstance(body, bytes):
-            raise IssuerError("Source run response is invalid")
-        if len(body) > MAX_GITHUB_RESPONSE_BYTES:
-            raise IssuerError("Source run response exceeds the size limit")
-        result = json.loads(body.decode("utf-8"), object_pairs_hook=_strict_object,
-                            parse_constant=_reject_json_constant)
     except IssuerError:
         raise
     except HTTPError as error:
         if error.fp is not None:
             error.close()
         raise IssuerError("Source run lookup failed") from None
-    except (URLError, TimeoutError, OSError, UnicodeError, ValueError):
+    except (URLError, TimeoutError, OSError):
         raise IssuerError("Source run lookup failed") from None
-    if not isinstance(result, dict):
-        raise IssuerError("Source run response is invalid")
-    return result
+    return _parse_github_body(body)
+
+
+def fetch_github_json_with_gh(path, environ=None, run=subprocess.run):
+    """Reads `path` through the GitHub CLI with the workflow's read-only
+    GH_TOKEN. Unauthenticated requests share the runner IP's limit of 60 per
+    hour, which other repositories exhaust."""
+    _check_github_path(path)
+    environ = os.environ if environ is None else environ
+    token = environ.get("GH_TOKEN")
+    if not isinstance(token, str) or not token:
+        raise IssuerError("Source run request is invalid")
+    env = {"GH_TOKEN": token, "GH_HOST": "github.com", "GH_PROMPT_DISABLED": "1", "NO_COLOR": "1",
+           "PATH": environ.get("PATH", "/usr/bin:/bin")}
+    if environ.get("HOME"):
+        env["HOME"] = environ["HOME"]
+    command = ["gh", "api", "--method", "GET", "-H", "Accept: application/vnd.github+json",
+               "-H", f"X-GitHub-Api-Version: {GITHUB_API_VERSION}", path]
+    try:
+        completed = run(command, env=env, capture_output=True, timeout=GITHUB_TIMEOUT_SECONDS * 4,
+                        check=False)
+    except (OSError, subprocess.SubprocessError):
+        raise IssuerError("Source run lookup failed") from None
+    if completed.returncode != 0:
+        raise IssuerError("Source run lookup failed")
+    return _parse_github_body(completed.stdout)
+
+
+def github_json_fetcher(environ=None):
+    environ = os.environ if environ is None else environ
+    if environ.get("GH_TOKEN"):
+        return lambda path: fetch_github_json_with_gh(path, environ)
+    return fetch_github_json
 
 
 def fetch_source_run(repository, run_id, token=None, opener=None):

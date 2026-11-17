@@ -385,6 +385,52 @@ class IssuerTests(unittest.TestCase):
             self.assertNotIn("private", str(caught.exception))
             self.assertNotIn("secret", str(caught.exception))
 
+    def test_gh_fetcher_passes_only_its_own_environment_and_parses_strictly(self):
+        calls = []
+
+        def run(command, **kwargs):
+            calls.append((command, kwargs))
+            return issuer.subprocess.CompletedProcess(command, 0, b'{"artifacts":[]}', b"")
+
+        environ = {"GH_TOKEN": "fake-token", "PATH": "/usr/bin", "HOME": "/home/runner",
+                   "CREDENTIALS": "r2", "GNUPGHOME": "/dev/shm/x"}
+        path = "/repos/luminusOS/zaptide/actions/runs/321/artifacts"
+        self.assertEqual(issuer.fetch_github_json_with_gh(path, environ, run), {"artifacts": []})
+        command, kwargs = calls[0]
+        self.assertEqual(command[:4], ["gh", "api", "--method", "GET"])
+        self.assertEqual(command[-1], path)
+        self.assertEqual(kwargs["env"], {"GH_TOKEN": "fake-token", "GH_HOST": "github.com",
+                                         "GH_PROMPT_DISABLED": "1", "NO_COLOR": "1",
+                                         "PATH": "/usr/bin", "HOME": "/home/runner"})
+        self.assertFalse(kwargs["check"])
+        self.assertNotIn("fake-token", " ".join(command))
+
+        for bad in ("/repos/luminusOS/other/actions/runs/321/artifacts",
+                    "/repos/luminusOS/zaptide/actions/runs/0/artifacts"):
+            with self.subTest(path=bad), self.assertRaises(issuer.IssuerError):
+                issuer.fetch_github_json_with_gh(bad, environ, run)
+        with self.assertRaises(issuer.IssuerError):
+            issuer.fetch_github_json_with_gh(path, {"PATH": "/usr/bin"}, run)
+        self.assertEqual(len(calls), 1)
+
+        results = (issuer.subprocess.CompletedProcess([], 1, b"", b"HTTP 403 private"),
+                   issuer.subprocess.CompletedProcess([], 0, b'{"id":1,"id":1}', b""),
+                   issuer.subprocess.CompletedProcess([], 0, b"[]", b""),
+                   issuer.subprocess.CompletedProcess([], 0, b"x" * (issuer.MAX_GITHUB_RESPONSE_BYTES + 1), b""),
+                   issuer.subprocess.TimeoutExpired("gh", 60), FileNotFoundError("gh"))
+        for result in results:
+            def failing(command, result=result, **kwargs):
+                if isinstance(result, BaseException):
+                    raise result
+                return result
+            with self.subTest(result=repr(result)[:40]), self.assertRaises(issuer.IssuerError) as caught:
+                issuer.fetch_github_json_with_gh(path, environ, failing)
+            self.assertNotIn("private", str(caught.exception))
+
+    def test_gh_is_used_only_with_a_workflow_token(self):
+        self.assertIs(issuer.github_json_fetcher({}), issuer.fetch_github_json)
+        self.assertIsNot(issuer.github_json_fetcher({"GH_TOKEN": "fake-token"}), issuer.fetch_github_json)
+
     def test_hmac_jwt_derivation_matches_fixed_vector(self):
         credentials = issuer.derive_credentials(
             "0123456789abcdef0123456789abcdef", "a" * 64, "flatpak", "stable", 600,

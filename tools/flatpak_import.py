@@ -176,7 +176,7 @@ def parse_checksums(content):
 
 
 def list_flatpak_artifacts(repository, run_id, fetcher=None):
-    listing = (fetcher or issuer.fetch_github_json)(f"/repos/{repository}/actions/runs/{run_id}/artifacts")
+    listing = (fetcher or issuer.github_json_fetcher())(f"/repos/{repository}/actions/runs/{run_id}/artifacts")
     entries = listing.get("artifacts") if isinstance(listing, dict) else None
     if not isinstance(entries, list):
         raise ImporterError("source run artifact listing is invalid")
