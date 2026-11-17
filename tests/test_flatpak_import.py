@@ -224,6 +224,37 @@ class ImporterContractTests(unittest.TestCase):
                 list_flatpak_artifacts("luminusOS/zaptide", "5", listing(bad))
         with self.assertRaises(ImporterError):
             list_flatpak_artifacts("luminusOS/zaptide", "5", lambda path: {"artifacts": "no"})
+        with self.assertRaises(ImporterError):
+            list_flatpak_artifacts("luminusOS/zaptide", "5", lambda path: {"artifacts": good, "total_count": 101})
+
+    def test_importer_hands_the_token_only_to_gh_and_requires_it_in_actions(self):
+        import tools.flatpak_import as importer
+        seen = []
+
+        def fetch_release(descriptor, work_dir, *, artifact_lister=None):
+            seen.append(("GH_TOKEN" in os.environ, artifact_lister))
+            raise ImporterError("stop")
+
+        with tempfile.TemporaryDirectory() as work:
+            descriptor = Path(work) / "descriptor.json"
+            descriptor.write_text("{}", encoding="utf-8")
+            argv = ["--mode", "publish", "--descriptor", str(descriptor), "--repo", work, "--work-dir", work]
+            with patch.dict(os.environ, {"GH_TOKEN": "fake-token", "GITHUB_ACTIONS": "true"}), \
+                    patch.object(importer, "fetch_release", fetch_release), \
+                    patch.object(importer.issuer, "fetch_github_json_with_gh",
+                                 lambda path, token: {"token": token}), \
+                    patch.object(importer, "list_flatpak_artifacts",
+                                 lambda repository, run, fetcher: fetcher("/path")):
+                self.assertEqual(importer.main(argv), 1)
+                self.assertNotIn("GH_TOKEN", os.environ)
+                self.assertEqual(seen[0][0], False)
+                self.assertEqual(seen[0][1]("luminusOS/zaptide", "5"), {"token": "fake-token"})
+
+            with patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}), \
+                    patch.object(importer, "fetch_release", fetch_release):
+                os.environ.pop("GH_TOKEN", None)
+                self.assertEqual(importer.main(argv), 1)
+            self.assertEqual(len(seen), 1)
 
     def release_assets(self, tamper=None):
         data = {"x86_64": b"x86 bundle", "aarch64": b"arm bundle"}

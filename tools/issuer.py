@@ -11,7 +11,9 @@ import os
 import re
 import secrets
 import stat
+import subprocess
 import sys
+import tempfile
 import time
 from urllib import request as urllib_request
 from urllib.error import HTTPError, URLError
@@ -171,7 +173,7 @@ class _NoRedirect(urllib_request.HTTPRedirectHandler):
         return None
 
 
-def fetch_github_json(path, token=None, opener=None):
+def _check_github_path(path):
     allowed_repositories = {entry[0] for entry in SOURCE_RELEASES.values()}
     allowed_path = False
     if isinstance(path, str):
@@ -190,6 +192,27 @@ def fetch_github_json(path, token=None, opener=None):
             break
     if not allowed_path:
         raise IssuerError("Source run request is invalid")
+
+
+def _parse_github_body(body):
+    if not isinstance(body, bytes):
+        raise IssuerError("Source run response is invalid")
+    if len(body) > MAX_GITHUB_RESPONSE_BYTES:
+        raise IssuerError("Source run response exceeds the size limit")
+    try:
+        result = json.loads(body.decode("utf-8"), object_pairs_hook=_strict_object,
+                            parse_constant=_reject_json_constant)
+    except IssuerError:
+        raise
+    except (UnicodeError, ValueError):
+        raise IssuerError("Source run lookup failed") from None
+    if not isinstance(result, dict):
+        raise IssuerError("Source run response is invalid")
+    return result
+
+
+def fetch_github_json(path, token=None, opener=None):
+    _check_github_path(path)
     url = f"https://{GITHUB_API_HOST}{path}"
     headers = {
         "Accept": "application/vnd.github+json",
@@ -209,23 +232,56 @@ def fetch_github_json(path, token=None, opener=None):
             body = response.read(MAX_GITHUB_RESPONSE_BYTES + 1)
         finally:
             response.close()
-        if not isinstance(body, bytes):
-            raise IssuerError("Source run response is invalid")
-        if len(body) > MAX_GITHUB_RESPONSE_BYTES:
-            raise IssuerError("Source run response exceeds the size limit")
-        result = json.loads(body.decode("utf-8"), object_pairs_hook=_strict_object,
-                            parse_constant=_reject_json_constant)
     except IssuerError:
         raise
     except HTTPError as error:
         if error.fp is not None:
             error.close()
         raise IssuerError("Source run lookup failed") from None
-    except (URLError, TimeoutError, OSError, UnicodeError, ValueError):
+    except (URLError, TimeoutError, OSError):
         raise IssuerError("Source run lookup failed") from None
-    if not isinstance(result, dict):
-        raise IssuerError("Source run response is invalid")
-    return result
+    return _parse_github_body(body)
+
+
+def fetch_github_json_with_gh(path, token, run=subprocess.run):
+    """Reads `path` through the GitHub CLI with the workflow's read-only token.
+    Unauthenticated requests share the runner IP's limit of 60 an hour, which
+    other repositories exhaust. gh gets an empty config directory and no HOME,
+    so no host, alias or socket setting can redirect it. Unlike
+    fetch_github_json, gh follows redirects; it drops the token when the host
+    changes, and these endpoints do not redirect."""
+    _check_github_path(path)
+    if not isinstance(token, str) or not token:
+        raise IssuerError("Source run request is invalid")
+    command = ["gh", "api", "--method", "GET", "-H", "Accept: application/vnd.github+json",
+               "-H", f"X-GitHub-Api-Version: {GITHUB_API_VERSION}"]
+    if path.endswith("/artifacts"):
+        command += ["-F", "per_page=100"]
+    command.append(path)
+    try:
+        with tempfile.TemporaryDirectory(prefix="gh-config-") as config:
+            env = {"GH_TOKEN": token, "GH_HOST": "github.com", "GH_CONFIG_DIR": config,
+                   "XDG_CACHE_HOME": config, "XDG_STATE_HOME": config, "XDG_DATA_HOME": config,
+                   "GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "NO_COLOR": "1",
+                   "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+            completed = run(command, env=env, capture_output=True,
+                            timeout=GITHUB_TIMEOUT_SECONDS * 4, check=False)
+    except (OSError, subprocess.SubprocessError):
+        raise IssuerError("Source run lookup failed") from None
+    if completed.returncode != 0:
+        raise IssuerError("Source run lookup failed")
+    return _parse_github_body(completed.stdout)
+
+
+def github_json_fetcher(token, require=False):
+    """The fetcher for source lookups: gh with `token`, or the unauthenticated
+    request for local runs. `require` refuses the latter, so a workflow that
+    lost its token fails with that reason instead of a rate limit."""
+    if token:
+        return lambda path: fetch_github_json_with_gh(path, token)
+    if require:
+        raise IssuerError("GH_TOKEN is required for source lookups in GitHub Actions")
+    return fetch_github_json
 
 
 def fetch_source_run(repository, run_id, token=None, opener=None):

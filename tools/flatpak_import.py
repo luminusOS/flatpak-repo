@@ -180,6 +180,9 @@ def list_flatpak_artifacts(repository, run_id, fetcher=None):
     entries = listing.get("artifacts") if isinstance(listing, dict) else None
     if not isinstance(entries, list):
         raise ImporterError("source run artifact listing is invalid")
+    total = listing.get("total_count")
+    if type(total) is int and total > len(entries):
+        raise ImporterError("source run lists more artifacts than one page holds")
     found = {}
     for arch in ARCHITECTURES:
         name = ARTIFACT_NAME.format(arch=arch)
@@ -696,14 +699,14 @@ def fetch_release(descriptor, work_dir, *, artifact_lister=None):
     return checked, bundle_paths
 
 
-def prepare_release(descriptor_path, repo, work_dir, *, allow_empty_repo=False):
+def prepare_release(descriptor_path, repo, work_dir, *, allow_empty_repo=False, artifact_lister=None):
     descriptor = json.loads(Path(descriptor_path).read_text(encoding="utf-8"))
     if allow_empty_repo and not verify_public_empty(descriptor.get("channel")):
         raise ImporterError("first publish was claimed but the public repository is not empty")
     verify_mirrored_repo(repo, descriptor.get("channel"),
                          allow_empty=allow_empty_repo)
     snapshot_base_auth(repo, Path(work_dir) / BASE_AUTH_DIR)
-    checked, bundle_paths = fetch_release(descriptor, work_dir)
+    checked, bundle_paths = fetch_release(descriptor, work_dir, artifact_lister=artifact_lister)
     inspected = merge_bundles(repo, bundle_paths, checked, sign=False)
     for item in inspected:
         item["architecture"] = item["ref"].split("/")[2]
@@ -925,16 +928,25 @@ def main(argv=None):
     parser.add_argument("--inspected")
     parser.add_argument("--allow-empty-repo", action="store_true")
     args = parser.parse_args(argv)
+    # Only gh needs the token; no flatpak, ostree, gpg or upload child sees it.
+    token = os.environ.pop("GH_TOKEN", None)
     try:
+        fetcher = issuer.github_json_fetcher(token, require=os.environ.get("GITHUB_ACTIONS") == "true")
+
+        def artifact_lister(repository, run_id):
+            return list_flatpak_artifacts(repository, run_id, fetcher)
+
         if args.mode == "prepare":
             descriptor, inspected = prepare_release(args.descriptor, args.repo, args.work_dir,
-                                                    allow_empty_repo=args.allow_empty_repo)
+                                                    allow_empty_repo=args.allow_empty_repo,
+                                                    artifact_lister=artifact_lister)
             if args.inspected:
                 Path(args.inspected).write_text(json.dumps(inspected, sort_keys=True, indent=2) + "\n",
                                                 encoding="utf-8")
             return 0
         descriptor = json.loads(Path(args.descriptor).read_text(encoding="utf-8"))
-        checked, bundle_paths = fetch_release(descriptor, Path(args.work_dir) / "publisher-bundles")
+        checked, bundle_paths = fetch_release(descriptor, Path(args.work_dir) / "publisher-bundles",
+                                              artifact_lister=artifact_lister)
         inspected = verify_stage(args.repo, args.work_dir, checked, bundle_paths)
         prune_unreachable(args.repo)
         sign_staged_repo(args.repo, args.gpg_home, args.signing_fingerprint)
@@ -948,7 +960,7 @@ def main(argv=None):
                         if key in item} for item in inspected]
         print(json.dumps({"status": "imported", "refs": result_refs}, sort_keys=True))
         return 0
-    except (ImporterError, PublishError) as error:
+    except (ImporterError, PublishError, issuer.IssuerError) as error:
         detail = getattr(error, "detail", "")
         print("Flatpak import failed:", error, *(["(" + detail + ")"] if detail else []), file=sys.stderr)
         return 1

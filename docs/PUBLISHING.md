@@ -10,7 +10,13 @@ protected issuer. Application source is never checked out or executed.
 
 1. **Checks** runs the test suite and distribution contracts on protected
    `main`.
-2. **Prepare** has no GitHub environment and no secrets. It installs Flatpak and
+2. **Prepare** has no GitHub environment and no secrets; its only credential is
+   the workflow's read-only `GH_TOKEN`, which lists the source run's artifacts
+   through `gh api`, since unauthenticated requests share the runner IP's limit
+   of 60 an hour. The importer removes it from its environment at startup and
+   hands it only to `gh`, which runs with an empty configuration; no Flatpak,
+   OSTree, GnuPG or upload process sees it. The publisher lists them the same
+   way. It installs Flatpak and
    OSTree, mirrors `https://flatpak.luminusos.org/<channel>/` over public HTTPS,
    then authenticates the mirror before downloading release bundles or changing
    the repository. The summary's detached signature must verify using the
