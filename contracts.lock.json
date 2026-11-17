@@ -5,8 +5,8 @@
     "approved": "2026-10-18"
   },
   "files": {
-    "distribution.schema.json": "a17635d45c5a0f0c2c51a075133f31884ce14cd1393daa20600255836732fe8a",
+    "distribution.schema.json": "4bff9b79ced268039acc16f7692efc47843544429fd659d301f4d596ebf89105",
     "distribution_contract.py": "c5675fa4feeb69eca43bd4c7274645a5851a417d9f01acca908535a7dfac59ab",
-    "test_distribution_contract.py": "056048dd5faf28604f88e004a7b94516a6730abba53ee0d58a5c7208212a90ff"
+    "test_distribution_contract.py": "a15ef0ea25f5ff124396857e5fae684d1006f826b24563f9691334015ca82ab8"
   }
 }
