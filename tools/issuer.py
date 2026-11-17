@@ -42,8 +42,8 @@ SOURCE_RELEASES = {
                                ".github/workflows/release.yml", "flatpak"),
     "org.luminusos.Aetheris": ("luminusOS/aetheris", ".github/workflows/release.yml",
                                 ".github/workflows/release-flatpak.yml", "flatpak"),
-    "io.github.luminusos.DeskUnion": ("luminusOS/deskunion", ".github/workflows/release.yml",
-                                      ".github/workflows/release-flatpak.yml", "flatpak"),
+    "org.luminusos.DeskUnion": ("luminusOS/deskunion", ".github/workflows/release.yml",
+                                ".github/workflows/release-flatpak.yml", "flatpak"),
     "sirius-installer": ("luminusOS/sirius", ".github/workflows/ci.yml",
                           ".github/workflows/ci.yml", "rpm"),
 }

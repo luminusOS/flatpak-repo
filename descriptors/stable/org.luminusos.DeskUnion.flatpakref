@@ -1,6 +1,6 @@
 [Flatpak Ref]
 Title=DeskUnion
-Name=io.github.luminusos.DeskUnion
+Name=org.luminusos.DeskUnion
 Branch=stable
 IsRuntime=false
 Url=https://flatpak.luminusos.org/stable/

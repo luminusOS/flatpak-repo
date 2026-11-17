@@ -88,9 +88,9 @@ def validate_descriptor(descriptor):
 ASSET_NAMES = {
     "dev.luminusos.ZapTide": "zaptide-{tag}-{arch}.flatpak",
     "org.luminusos.Aetheris": "aetheris-{release}-linux-{arch}.flatpak",
-    "io.github.luminusos.DeskUnion": "deskunion-{release}-linux-{arch}.flatpak",
+    "org.luminusos.DeskUnion": "deskunion-{release}-linux-{arch}.flatpak",
 }
-CHECKSUMS_NAMES = {"io.github.luminusos.DeskUnion": "SHA256SUMS.txt"}
+CHECKSUMS_NAMES = {"org.luminusos.DeskUnion": "SHA256SUMS.txt"}
 
 
 def fetch_plan(descriptor):

@@ -42,9 +42,9 @@ class DescriptorTests(unittest.TestCase):
     def test_deskunion_ref_descriptor_is_titled_per_channel(self):
         for channel, title in (("stable", "DeskUnion"), ("testing", "DeskUnion (testing)")):
             parser = configparser.ConfigParser(interpolation=None)
-            parser.read_string(descriptors.flatpakref("io.github.luminusos.DeskUnion", channel))
+            parser.read_string(descriptors.flatpakref("org.luminusos.DeskUnion", channel))
             self.assertEqual(parser["Flatpak Ref"]["title"], title)
-            self.assertEqual(parser["Flatpak Ref"]["name"], "io.github.luminusos.DeskUnion")
+            self.assertEqual(parser["Flatpak Ref"]["name"], "org.luminusos.DeskUnion")
 
     def test_repo_descriptor_points_at_the_channel_and_branch(self):
         for channel in descriptors.CHANNELS:

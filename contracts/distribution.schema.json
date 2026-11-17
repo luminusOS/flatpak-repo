@@ -7,7 +7,7 @@
     "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$(?![\\s\\S])"},
     "channel": {"enum": ["stable", "testing"]},
     "architecture": {"enum": ["x86_64", "aarch64"]},
-    "application": {"enum": ["dev.luminusos.ZapTide", "org.luminusos.Aetheris", "io.github.luminusos.DeskUnion", "sirius-installer"]},
+    "application": {"enum": ["dev.luminusos.ZapTide", "org.luminusos.Aetheris", "org.luminusos.DeskUnion", "sirius-installer"]},
     "artifact": {
       "type": "object", "additionalProperties": false,
       "required": ["artifact_id", "filename", "sha256", "size_bytes"],
@@ -51,7 +51,7 @@
          "then": {"properties": {"format": {"const": "flatpak"}, "source": {"properties": {
            "repository": {"const": "luminusOS/aetheris"}, "workflow": {"const": ".github/workflows/release-flatpak.yml"}
          }}}}},
-        {"if": {"properties": {"application": {"const": "io.github.luminusos.DeskUnion"}}},
+        {"if": {"properties": {"application": {"const": "org.luminusos.DeskUnion"}}},
          "then": {"properties": {"format": {"const": "flatpak"}, "source": {"properties": {
            "repository": {"const": "luminusOS/deskunion"}, "workflow": {"const": ".github/workflows/release-flatpak.yml"}
          }}}}},
@@ -99,7 +99,7 @@
         "flatpak": {
           "type": "object", "additionalProperties": false, "required": ["ref", "commit"],
           "properties": {
-            "ref": {"type": "string", "pattern": "^app/(dev\\.luminusos\\.ZapTide|org\\.luminusos\\.Aetheris|io\\.github\\.luminusos\\.DeskUnion)/(x86_64|aarch64)/(stable|testing)$(?![\\s\\S])"},
+            "ref": {"type": "string", "pattern": "^app/(dev\\.luminusos\\.ZapTide|org\\.luminusos\\.Aetheris|org\\.luminusos\\.DeskUnion)/(x86_64|aarch64)/(stable|testing)$(?![\\s\\S])"},
             "commit": {"$ref": "#/$defs/sha256"}
           }
         }
@@ -109,7 +109,7 @@
           "format": {"const": "rpm"}, "application": {"const": "sirius-installer"}
         }},
         {"required": ["flatpak"], "not": {"required": ["rpm"]}, "properties": {
-          "format": {"const": "flatpak"}, "application": {"enum": ["dev.luminusos.ZapTide", "org.luminusos.Aetheris", "io.github.luminusos.DeskUnion"]}
+          "format": {"const": "flatpak"}, "application": {"enum": ["dev.luminusos.ZapTide", "org.luminusos.Aetheris", "org.luminusos.DeskUnion"]}
         }}
       ]
     }

@@ -28,8 +28,8 @@ SOURCE_FIXTURES = {
                                ".github/workflows/release.yml", "flatpak"),
     "org.luminusos.Aetheris": ("luminusOS/aetheris", ".github/workflows/release.yml",
                                 ".github/workflows/release-flatpak.yml", "flatpak"),
-    "io.github.luminusos.DeskUnion": ("luminusOS/deskunion", ".github/workflows/release.yml",
-                                      ".github/workflows/release-flatpak.yml", "flatpak"),
+    "org.luminusos.DeskUnion": ("luminusOS/deskunion", ".github/workflows/release.yml",
+                                ".github/workflows/release-flatpak.yml", "flatpak"),
     "sirius-installer": ("luminusOS/sirius", ".github/workflows/ci.yml",
                           ".github/workflows/ci.yml", "rpm"),
 }
@@ -59,7 +59,7 @@ REAL_SOURCE_RUNS = {
              "ref": "refs/tags/v1.5.0", "sha": "b3ac2820bdf2bb11dbf4a4639d9a962f96630c33"},
         ],
     },
-    "io.github.luminusos.DeskUnion": {
+    "org.luminusos.DeskUnion": {
         "id": 40000000001, "event": "push", "head_branch": "v0.3.0",
         "head_sha": "d" * 40,
         "path": ".github/workflows/release.yml", "run_attempt": 1,
@@ -179,7 +179,7 @@ class IssuerTests(unittest.TestCase):
 
     def test_reusable_workflow_requires_same_repository_reference_and_matching_sha(self):
         for package_id, repository in (("org.luminusos.Aetheris", "luminusOS/aetheris"),
-                                       ("io.github.luminusos.DeskUnion", "luminusOS/deskunion")):
+                                       ("org.luminusos.DeskUnion", "luminusOS/deskunion")):
             descriptor = {**self.descriptor, "package_id": package_id}
             valid_run = source_run(descriptor)
             fetcher, _ = self.fake_fetcher(valid_run)

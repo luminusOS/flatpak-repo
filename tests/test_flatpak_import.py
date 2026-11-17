@@ -135,7 +135,7 @@ class ImporterContractTests(unittest.TestCase):
         self.assertEqual(rc.asset_urls["x86_64"].rsplit("/", 1)[1], "aetheris-1.5.1-rc1-linux-x86_64.flatpak")
 
     def test_deskunion_assets_use_its_names_and_its_checksum_file(self):
-        plan = fetch_plan({**descriptor(), "package_id": "io.github.luminusos.DeskUnion", "tag": "v0.3.0",
+        plan = fetch_plan({**descriptor(), "package_id": "org.luminusos.DeskUnion", "tag": "v0.3.0",
                            "version": "0.3.0"})
         self.assertEqual(plan.repository, "luminusOS/deskunion")
         self.assertEqual(plan.asset_urls["aarch64"],

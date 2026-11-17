@@ -1,6 +1,6 @@
 [Flatpak Ref]
 Title=DeskUnion (testing)
-Name=io.github.luminusos.DeskUnion
+Name=org.luminusos.DeskUnion
 Branch=testing
 IsRuntime=false
 Url=https://flatpak.luminusos.org/testing/
