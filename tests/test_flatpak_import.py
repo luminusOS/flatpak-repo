@@ -467,7 +467,8 @@ class RealFlatpakImportTests(unittest.TestCase):
         self.work.cleanup()
 
     def make_bundle(self, app, arch, *, version="1.2.3", branch="testing", marker="initial",
-                    runtime_arch=None, custom_version=True, subject=None, metadata_name=None):
+                    runtime_arch=None, custom_version=True, subject=None, metadata_name=None,
+                    commit_metadata=()):
         root = self.root_case / f"bundle-{app}-{arch}-{branch}-{version}-{marker}-{runtime_arch or arch}"
         source = root / "repo"
         tree = root / "tree"
@@ -486,7 +487,8 @@ class RealFlatpakImportTests(unittest.TestCase):
                         "--tree=dir=" + str(tree), "--subject=" + (subject or version),
                         "--add-metadata-string=xa.metadata=" + (tree / "metadata").read_text(encoding="utf-8"),
                         "--add-metadata=xa.installed-size=uint64 100",
-                        "--add-metadata=xa.download-size=uint64 100"],
+                        "--add-metadata=xa.download-size=uint64 100",
+                        *(f"--add-metadata-string={key}={value}" for key, value in commit_metadata)],
                        check=True, capture_output=True)
         bundle = root / "app.flatpak"
         subprocess.run(["flatpak", "build-bundle", "--arch=" + arch, str(source), str(bundle),
@@ -1158,6 +1160,48 @@ class RealFlatpakImportTests(unittest.TestCase):
                                version="1.2.3", work_dir=self.root_case / f"inspect-{index}")
         inspect_bundle(self.make_bundle(new, "x86_64", marker="own"), app_id=new, architecture="x86_64",
                        channel="testing", version="1.2.3", work_dir=self.root_case / "inspect-own")
+
+    def test_only_the_old_zaptide_id_may_rebase_and_only_onto_the_new_one(self):
+        old, new = "dev.luminusos.ZapTide", "org.luminusos.ZapTide"
+        rebase = "ostree.endoflife-rebase"
+        allowed = self.make_bundle(old, "x86_64", marker="eol",
+                                   commit_metadata=((rebase, f"app/{new}/x86_64/testing"),))
+        inspect_bundle(allowed, app_id=old, architecture="x86_64", channel="testing", version="1.2.3",
+                       work_dir=self.root_case / "eol-allowed")
+        refused = (
+            (old, ((rebase, "app/org.luminusos.Aetheris/x86_64/testing"),)),
+            (old, ((rebase, f"app/{new}/aarch64/testing"),)),
+            (old, ((rebase, f"app/{new}/x86_64/stable"),)),
+            (old, ((rebase, f"runtime/{new}/x86_64/testing"),)),
+            (new, ((rebase, f"app/{old}/x86_64/testing"),)),
+            ("org.luminusos.Aetheris", ((rebase, f"app/{new}/x86_64/testing"),)),
+            (old, (("ostree.endoflife", "gone"),)),
+        )
+        for index, (app, metadata) in enumerate(refused):
+            bundle = self.make_bundle(app, "x86_64", marker=f"eol-{index}", commit_metadata=metadata)
+            with self.subTest(app=app, metadata=metadata), self.assertRaises(ImporterError):
+                inspect_bundle(bundle, app_id=app, architecture="x86_64", channel="testing",
+                               version="1.2.3", work_dir=self.root_case / f"eol-refused-{index}")
+
+    def test_an_end_of_life_rebase_reaches_flatpak_clients(self):
+        old, new = "dev.luminusos.ZapTide", "org.luminusos.ZapTide"
+        bundles = {arch: self.make_bundle(old, arch, marker="eol", commit_metadata=(
+            ("ostree.endoflife-rebase", f"app/{new}/{arch}/testing"),)) for arch in ("x86_64", "aarch64")}
+        with self.assertRaises(ImporterError) as caught:
+            self.merge(old, bundles)
+        self.assertIn("target is not published", str(caught.exception))
+        refs = subprocess.run(["ostree", "refs", "--repo", str(self.repo)], check=True, capture_output=True,
+                              text=True).stdout.split()
+        self.assertFalse([ref for ref in refs if old in ref])
+        self.merge(new, self.bundles(new))
+        self.merge(old, bundles)
+        home = self.root_case / "flatpak-home-eol"
+        env = {**self.env, "XDG_DATA_HOME": str(home / "data"), "XDG_CONFIG_HOME": str(home / "config")}
+        subprocess.run(["flatpak", "remote-add", "--user", "--gpg-import", str(self.trust_path),
+                        "publish-fixture", "file://" + str(self.repo)], env=env, check=True, capture_output=True)
+        result = subprocess.run(["flatpak", "remote-info", "--user", "--arch=x86_64", "publish-fixture",
+                                 f"{old}//testing"], env=env, check=True, capture_output=True, text=True)
+        self.assertIn(f"End-of-life-rebase: app/{new}/x86_64/testing", result.stdout)
 
     def test_summary_signature_is_accepted_by_a_flatpak_client(self):
         app = "org.luminusos.TestOne"
