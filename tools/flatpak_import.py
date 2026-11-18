@@ -311,6 +311,25 @@ def _commit_metadata(repo, ref):
 END_OF_LIFE_REBASES = {"dev.luminusos.ZapTide": "org.luminusos.ZapTide"}
 
 
+def _end_of_life_target(repo, checksum):
+    keys = set(_run(["ostree", "show", "--repo", str(repo), checksum,
+                     "--list-metadata-keys"]).decode("utf-8", "strict").split())
+    if "ostree.endoflife-rebase" not in keys:
+        return None
+    value = _run(["ostree", "show", "--repo", str(repo), checksum,
+                  "--print-metadata-key=ostree.endoflife-rebase"]).decode("utf-8", "strict").strip()
+    return value[1:-1] if len(value) > 1 and value[0] == value[-1] == "'" else value
+
+
+def _require_rebase_targets(repo, inspected, refs):
+    """A rebase to a ref the channel does not serve would leave installs on
+    an end-of-life app with nothing to move to."""
+    for item in inspected:
+        target = _end_of_life_target(repo, item["commit"])
+        if target is not None and target not in refs:
+            raise ImporterError("end-of-life rebase target is not published in this channel")
+
+
 def _check_end_of_life(repo, checksum, app_id, architecture, channel):
     keys = set(_run(["ostree", "show", "--repo", str(repo), checksum,
                      "--list-metadata-keys"]).decode("utf-8", "strict").split())
@@ -520,6 +539,7 @@ def verify_stage(repo, work_dir, descriptor, bundle_paths, *, trust_root=None, p
                        for ref in _repo_refs(repo)}
         if staged_refs != expected_refs:
             raise ImporterError("staged repository refs differ from the authenticated base and verified bundles")
+        _require_rebase_targets(repo, inspected, expected_refs)
         if _load_imports_ledger(repo) != _updated_ledger(base_ledger, inspected, descriptor):
             raise ImporterError("staged import ledger differs from the authenticated base and verified bundles")
         _verify_repo_config(repo)
@@ -682,6 +702,7 @@ def merge_bundles(repo, bundles, descriptor, *, gpg_home=None, signing_fingerpri
             if item.get("no_op"):
                 continue
             _run(["flatpak", "build-import-bundle", "--no-update-summary", str(repo), str(bundles[arch])])
+        _require_rebase_targets(repo, inspected, _repo_refs(repo))
         if changed and sign:
             verify_tmpfs(gpg_home)
             _run(["flatpak", "build-update-repo", "--gpg-sign=" + signing_fingerprint + "!",

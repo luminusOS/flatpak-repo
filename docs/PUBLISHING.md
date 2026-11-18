@@ -70,8 +70,11 @@ signing and the summary to clients, which then offer to move installs and
 their data to the new ID. The importer refuses a plain end-of-life mark and any
 rebase not listed in `END_OF_LIFE_REBASES` in `tools/flatpak_import.py`, which
 must point at the new ID on the same architecture and channel, so a release
-cannot redirect another application's installs. ZapTide's
-`dev.luminusos.ZapTide` to `org.luminusos.ZapTide` is the only one.
+cannot redirect another application's installs, and the target ref must
+already be published in the channel, so publish the new ID first. ZapTide's
+`dev.luminusos.ZapTide` to `org.luminusos.ZapTide` is the only one. Retiring
+an application without a successor is not supported yet; it needs its own
+change to the importer rather than a release carrying `end-of-life`.
 
 Each application names its release files in `ASSET_NAMES` and `CHECKSUMS_NAMES`
 in `tools/flatpak_import.py`. The checksum file is `checksums.txt` unless the

@@ -1187,6 +1187,10 @@ class RealFlatpakImportTests(unittest.TestCase):
         old, new = "dev.luminusos.ZapTide", "org.luminusos.ZapTide"
         bundles = {arch: self.make_bundle(old, arch, marker="eol", commit_metadata=(
             ("ostree.endoflife-rebase", f"app/{new}/{arch}/testing"),)) for arch in ("x86_64", "aarch64")}
+        with self.assertRaises(ImporterError) as caught:
+            self.merge(old, bundles)
+        self.assertIn("target is not published", str(caught.exception))
+        self.merge(new, self.bundles(new))
         self.merge(old, bundles)
         home = self.root_case / "flatpak-home-eol"
         env = {**self.env, "XDG_DATA_HOME": str(home / "data"), "XDG_CONFIG_HOME": str(home / "config")}
