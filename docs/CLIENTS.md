@@ -23,7 +23,9 @@ offers every application and publishing one never removes the others.
 ZapTide is registered under two IDs. From 1.0.0 it is `org.luminusos.ZapTide`;
 `dev.luminusos.ZapTide` carries the releases before it and stays in the catalog
 so it can be retired with an end-of-life rebase to the new ID
-(luminusOS/zaptide#234).
+(luminusOS/zaptide#234). Both IDs share ZapTide's tags, and each ref's version
+rules apply on their own, so the old ID's last release needs a version above
+0.9.0 that no release of the new ID uses.
 
 ## Add a remote
 
