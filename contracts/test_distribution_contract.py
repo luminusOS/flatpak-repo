@@ -12,6 +12,7 @@ from distribution_contract import (
 def release_fixture(version="1.2.3", application="dev.luminusos.ZapTide"):
     repository, workflow, package_format = {
         "dev.luminusos.ZapTide": ("zaptide", "release.yml", "flatpak"),
+        "org.luminusos.ZapTide": ("zaptide", "release.yml", "flatpak"),
         "org.luminusos.Aetheris": ("aetheris", "release-flatpak.yml", "flatpak"),
         "org.luminusos.DeskUnion": ("deskunion", "release-flatpak.yml", "flatpak"),
         "sirius-installer": ("sirius", "ci.yml", "rpm"),
@@ -63,7 +64,8 @@ class ReleaseTests(unittest.TestCase):
         Draft202012Validator.check_schema(SCHEMA)
 
     def test_accepts_every_application_and_both_tag_spellings(self):
-        for app in ("dev.luminusos.ZapTide", "org.luminusos.Aetheris", "org.luminusos.DeskUnion",
+        for app in ("dev.luminusos.ZapTide", "org.luminusos.ZapTide", "org.luminusos.Aetheris",
+                    "org.luminusos.DeskUnion",
                     "sirius-installer"):
             for version in ("1.2.3", "1.2.3-rc.1"):
                 release = release_fixture(version, app)
@@ -97,7 +99,8 @@ class ReleaseTests(unittest.TestCase):
                 validate_release(candidate)
 
     def test_rejects_wrong_source_workflow_and_format_for_each_app(self):
-        for app in ("dev.luminusos.ZapTide", "org.luminusos.Aetheris", "org.luminusos.DeskUnion",
+        for app in ("dev.luminusos.ZapTide", "org.luminusos.ZapTide", "org.luminusos.Aetheris",
+                    "org.luminusos.DeskUnion",
                     "sirius-installer"):
             for field, value in (("repository", "attacker/app"), ("workflow", ".github/workflows/evil.yml"),
                                  ("format", "flatpak" if app == "sirius-installer" else "rpm")):
@@ -334,6 +337,12 @@ class PinTests(unittest.TestCase):
         candidate["pins"][0]["rpm"]["version"] = "1.2.3~rc.1"
         validate_pins(candidate)
 
+    def test_accepts_a_renamed_zaptide_flatpak_pin(self):
+        candidate = pins_fixture("flatpak")
+        candidate["pins"][0]["application"] = "org.luminusos.ZapTide"
+        candidate["pins"][0]["flatpak"]["ref"] = "app/org.luminusos.ZapTide/x86_64/stable"
+        validate_pins(candidate)
+
     def test_accepts_a_deskunion_flatpak_pin(self):
         candidate = pins_fixture("flatpak")
         candidate["pins"][0]["application"] = "org.luminusos.DeskUnion"
@@ -343,6 +352,7 @@ class PinTests(unittest.TestCase):
     def test_rejects_flatpak_ref_commit_and_variant_mismatches(self):
         for ref in ("app/dev.luminusos.ZapTide/aarch64/stable", "app/dev.luminusos.ZapTide/x86_64/testing",
                     "app/org.luminusos.Aetheris/x86_64/stable", "app/org.luminusos.DeskUnion/x86_64/stable",
+                    "app/org.luminusos.ZapTide/x86_64/stable",
                     "runtime/dev.luminusos.ZapTide/x86_64/stable"):
             candidate = pins_fixture("flatpak")
             candidate["pins"][0]["flatpak"]["ref"] = ref

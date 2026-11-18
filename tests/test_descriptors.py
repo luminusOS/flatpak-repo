@@ -39,6 +39,13 @@ class DescriptorTests(unittest.TestCase):
                      for channel in descriptors.CHANNELS for item in catalog["applications"]}
         self.assertEqual(set(files), expected)
 
+    def test_renamed_zaptide_ref_descriptor_is_titled_per_channel(self):
+        for channel, title in (("stable", "ZapTide"), ("testing", "ZapTide (testing)")):
+            parser = configparser.ConfigParser(interpolation=None)
+            parser.read_string(descriptors.flatpakref("org.luminusos.ZapTide", channel))
+            self.assertEqual(parser["Flatpak Ref"]["title"], title)
+            self.assertEqual(parser["Flatpak Ref"]["name"], "org.luminusos.ZapTide")
+
     def test_deskunion_ref_descriptor_is_titled_per_channel(self):
         for channel, title in (("stable", "DeskUnion"), ("testing", "DeskUnion (testing)")):
             parser = configparser.ConfigParser(interpolation=None)

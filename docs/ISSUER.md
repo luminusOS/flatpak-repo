@@ -10,7 +10,10 @@ default TTL capped at 900 seconds. The encrypted capsule expires after 600 secon
 Before reading parent credentials, the issuer queries the GitHub Actions run API.
 It accepts only `push` runs for the package's contract-mapped repository and
 workflow. ZapTide uses `luminusOS/zaptide` and
-`.github/workflows/release.yml`; Aetheris uses `luminusOS/aetheris` and
+`.github/workflows/release.yml` for both of its IDs, `dev.luminusos.ZapTide`
+before 1.0.0 and `org.luminusos.ZapTide` from then on, so the source run
+cannot tell them apart; the importer does, by the bundle's ref and
+`[Application] name`; Aetheris uses `luminusOS/aetheris` and
 `.github/workflows/release-flatpak.yml`; DeskUnion uses `luminusOS/deskunion`
 and `.github/workflows/release-flatpak.yml`; Sirius uses `luminusOS/sirius` and
 `.github/workflows/ci.yml`. ZapTide and Sirius run their contract workflows

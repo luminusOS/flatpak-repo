@@ -134,6 +134,16 @@ class ImporterContractTests(unittest.TestCase):
                          "version": "1.5.1-rc.1"})
         self.assertEqual(rc.asset_urls["x86_64"].rsplit("/", 1)[1], "aetheris-1.5.1-rc1-linux-x86_64.flatpak")
 
+    def test_renamed_zaptide_assets_come_from_the_zaptide_release(self):
+        plan = fetch_plan({**descriptor(), "package_id": "org.luminusos.ZapTide", "tag": "v1.0.0",
+                           "version": "1.0.0"})
+        self.assertEqual(plan.repository, "luminusOS/zaptide")
+        self.assertEqual(plan.asset_urls["x86_64"],
+                         "https://github.com/luminusOS/zaptide/releases/download/v1.0.0/"
+                         "zaptide-v1.0.0-x86_64.flatpak")
+        self.assertEqual(plan.checksums_url,
+                         "https://github.com/luminusOS/zaptide/releases/download/v1.0.0/checksums.txt")
+
     def test_deskunion_assets_use_its_names_and_its_checksum_file(self):
         plan = fetch_plan({**descriptor(), "package_id": "org.luminusos.DeskUnion", "tag": "v0.3.0",
                            "version": "0.3.0"})
@@ -457,14 +467,14 @@ class RealFlatpakImportTests(unittest.TestCase):
         self.work.cleanup()
 
     def make_bundle(self, app, arch, *, version="1.2.3", branch="testing", marker="initial",
-                    runtime_arch=None, custom_version=True, subject=None):
+                    runtime_arch=None, custom_version=True, subject=None, metadata_name=None):
         root = self.root_case / f"bundle-{app}-{arch}-{branch}-{version}-{marker}-{runtime_arch or arch}"
         source = root / "repo"
         tree = root / "tree"
         tree.mkdir(parents=True)
         (tree / "files").mkdir()
         (tree / "metadata").write_text(
-            f"[Application]\nname={app}\nruntime=org.freedesktop.Platform/{runtime_arch or arch}/24.08\n"
+            f"[Application]\nname={metadata_name or app}\nruntime=org.freedesktop.Platform/{runtime_arch or arch}/24.08\n"
             f"sdk=org.freedesktop.Sdk/{arch}/24.08\ncommand=test\n"
             + (f"version={version}\n" if custom_version else ""),
             encoding="utf-8")
@@ -1135,6 +1145,19 @@ class RealFlatpakImportTests(unittest.TestCase):
         with self.assertRaises(ImporterError):
             inspect_bundle(bundle, app_id="org.luminusos.TestOne", architecture="x86_64",
                            channel="testing", version="1.2.3", work_dir=self.root_case / "inspect")
+
+    def test_a_zaptide_bundle_is_never_imported_under_its_other_id(self):
+        # Both ZapTide IDs come from the same repository, workflow and asset
+        # names; only the bundle's ref and Application name tell them apart.
+        old, new = "dev.luminusos.ZapTide", "org.luminusos.ZapTide"
+        cases = ((self.make_bundle(old, "x86_64"), new), (self.make_bundle(new, "x86_64"), old),
+                 (self.make_bundle(new, "x86_64", marker="renamed", metadata_name=old), new))
+        for index, (bundle, app_id) in enumerate(cases):
+            with self.subTest(app_id=app_id, case=index), self.assertRaises(ImporterError):
+                inspect_bundle(bundle, app_id=app_id, architecture="x86_64", channel="testing",
+                               version="1.2.3", work_dir=self.root_case / f"inspect-{index}")
+        inspect_bundle(self.make_bundle(new, "x86_64", marker="own"), app_id=new, architecture="x86_64",
+                       channel="testing", version="1.2.3", work_dir=self.root_case / "inspect-own")
 
     def test_summary_signature_is_accepted_by_a_flatpak_client(self):
         app = "org.luminusos.TestOne"

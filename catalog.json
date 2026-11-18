@@ -12,6 +12,13 @@
       }
     },
     {
+      "id": "org.luminusos.ZapTide",
+      "source": {
+        "repository": "luminusOS/zaptide",
+        "workflow": ".github/workflows/release.yml"
+      }
+    },
+    {
       "id": "org.luminusos.Aetheris",
       "source": {
         "repository": "luminusOS/aetheris",

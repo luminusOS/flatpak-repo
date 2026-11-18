@@ -17,7 +17,8 @@ HOMEPAGE = "https://luminusos.org"
 RUNTIME_REPO = "https://dl.flathub.org/repo/flathub.flatpakrepo"
 CHANNELS = ("stable", "testing")
 APP_ID = re.compile(r"[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9-]*){2,}\Z")
-TITLES = {"dev.luminusos.ZapTide": "ZapTide", "org.luminusos.Aetheris": "Aetheris",
+TITLES = {"dev.luminusos.ZapTide": "ZapTide", "org.luminusos.ZapTide": "ZapTide",
+          "org.luminusos.Aetheris": "Aetheris",
           "org.luminusos.DeskUnion": "DeskUnion"}
 
 
