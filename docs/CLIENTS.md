@@ -20,6 +20,11 @@ The catalog lists three applications, ZapTide, Aetheris and DeskUnion, for
 `x86_64` and `aarch64`. All share one repository per channel, so one remote
 offers every application and publishing one never removes the others.
 
+ZapTide is registered under two IDs. From 1.0.0 it is `org.luminusos.ZapTide`;
+`dev.luminusos.ZapTide` carries the releases before it and stays in the catalog
+so it can be retired with an end-of-life rebase to the new ID
+(luminusOS/zaptide#234).
+
 ## Add a remote
 
 ```sh
@@ -30,7 +35,7 @@ flatpak remote-add --user luminus descriptors/stable/luminus-stable.flatpakrepo
 ## Install an application
 
 ```sh
-flatpak install --user --from descriptors/stable/dev.luminusos.ZapTide.flatpakref
+flatpak install --user --from descriptors/stable/org.luminusos.ZapTide.flatpakref
 flatpak install --user --from descriptors/testing/org.luminusos.Aetheris.flatpakref
 ```
 

@@ -87,6 +87,7 @@ def validate_descriptor(descriptor):
 
 ASSET_NAMES = {
     "dev.luminusos.ZapTide": "zaptide-{tag}-{arch}.flatpak",
+    "org.luminusos.ZapTide": "zaptide-{tag}-{arch}.flatpak",
     "org.luminusos.Aetheris": "aetheris-{release}-linux-{arch}.flatpak",
     "org.luminusos.DeskUnion": "deskunion-{release}-linux-{arch}.flatpak",
 }

@@ -42,6 +42,8 @@ _VERSION_CONTRACT = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9
 SOURCE_RELEASES = {
     "dev.luminusos.ZapTide": ("luminusOS/zaptide", ".github/workflows/release.yml",
                                ".github/workflows/release.yml", "flatpak"),
+    "org.luminusos.ZapTide": ("luminusOS/zaptide", ".github/workflows/release.yml",
+                               ".github/workflows/release.yml", "flatpak"),
     "org.luminusos.Aetheris": ("luminusOS/aetheris", ".github/workflows/release.yml",
                                 ".github/workflows/release-flatpak.yml", "flatpak"),
     "org.luminusos.DeskUnion": ("luminusOS/deskunion", ".github/workflows/release.yml",

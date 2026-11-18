@@ -134,6 +134,16 @@ class ImporterContractTests(unittest.TestCase):
                          "version": "1.5.1-rc.1"})
         self.assertEqual(rc.asset_urls["x86_64"].rsplit("/", 1)[1], "aetheris-1.5.1-rc1-linux-x86_64.flatpak")
 
+    def test_renamed_zaptide_assets_come_from_the_zaptide_release(self):
+        plan = fetch_plan({**descriptor(), "package_id": "org.luminusos.ZapTide", "tag": "v1.0.0",
+                           "version": "1.0.0"})
+        self.assertEqual(plan.repository, "luminusOS/zaptide")
+        self.assertEqual(plan.asset_urls["x86_64"],
+                         "https://github.com/luminusOS/zaptide/releases/download/v1.0.0/"
+                         "zaptide-v1.0.0-x86_64.flatpak")
+        self.assertEqual(plan.checksums_url,
+                         "https://github.com/luminusOS/zaptide/releases/download/v1.0.0/checksums.txt")
+
     def test_deskunion_assets_use_its_names_and_its_checksum_file(self):
         plan = fetch_plan({**descriptor(), "package_id": "org.luminusos.DeskUnion", "tag": "v0.3.0",
                            "version": "0.3.0"})

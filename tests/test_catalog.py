@@ -20,9 +20,9 @@ LOCK_EXPECTED = {
     "schema_version": 1,
     "source": {"path": "docs/specs/luminus-distribution", "approved": "2026-10-18"},
     "files": {
-        "distribution.schema.json": "7b7910dfc20bfa3c25eaa25f2a67582ff90e6c8b8fe00434fa65eaa93acf931b",
+        "distribution.schema.json": "126c38fbdf0e7393cf9289fc75ae523d5ce72abb317c50a11e8cfff6a7844c66",
         "distribution_contract.py": "c5675fa4feeb69eca43bd4c7274645a5851a417d9f01acca908535a7dfac59ab",
-        "test_distribution_contract.py": "180b3734312fd456bbc57b3ae16e89b93e233b63b89cef494ea295f65bb0afef",
+        "test_distribution_contract.py": "246a4816a921be87ee4320e0a1f9fa336abe29932f8cb851c31a82b6ebebaf57",
     },
 }
 
@@ -34,6 +34,10 @@ def catalog_fixture():
 def expected_application_sources(catalog):
     if catalog["format"] == "flatpak":
         return {
+            "org.luminusos.ZapTide": {
+                "repository": "luminusOS/zaptide",
+                "workflow": ".github/workflows/release.yml",
+            },
             "dev.luminusos.ZapTide": {
                 "repository": "luminusOS/zaptide",
                 "workflow": ".github/workflows/release.yml",
