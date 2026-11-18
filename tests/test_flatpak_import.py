@@ -1190,6 +1190,9 @@ class RealFlatpakImportTests(unittest.TestCase):
         with self.assertRaises(ImporterError) as caught:
             self.merge(old, bundles)
         self.assertIn("target is not published", str(caught.exception))
+        refs = subprocess.run(["ostree", "refs", "--repo", str(self.repo)], check=True, capture_output=True,
+                              text=True).stdout.split()
+        self.assertFalse([ref for ref in refs if old in ref])
         self.merge(new, self.bundles(new))
         self.merge(old, bundles)
         home = self.root_case / "flatpak-home-eol"

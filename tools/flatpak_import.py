@@ -311,21 +311,11 @@ def _commit_metadata(repo, ref):
 END_OF_LIFE_REBASES = {"dev.luminusos.ZapTide": "org.luminusos.ZapTide"}
 
 
-def _end_of_life_target(repo, checksum):
-    keys = set(_run(["ostree", "show", "--repo", str(repo), checksum,
-                     "--list-metadata-keys"]).decode("utf-8", "strict").split())
-    if "ostree.endoflife-rebase" not in keys:
-        return None
-    value = _run(["ostree", "show", "--repo", str(repo), checksum,
-                  "--print-metadata-key=ostree.endoflife-rebase"]).decode("utf-8", "strict").strip()
-    return value[1:-1] if len(value) > 1 and value[0] == value[-1] == "'" else value
-
-
-def _require_rebase_targets(repo, inspected, refs):
+def _require_rebase_targets(inspected, refs):
     """A rebase to a ref the channel does not serve would leave installs on
     an end-of-life app with nothing to move to."""
     for item in inspected:
-        target = _end_of_life_target(repo, item["commit"])
+        target = item.get("rebase")
         if target is not None and target not in refs:
             raise ImporterError("end-of-life rebase target is not published in this channel")
 
@@ -336,12 +326,14 @@ def _check_end_of_life(repo, checksum, app_id, architecture, channel):
     if "ostree.endoflife" in keys:
         raise ImporterError("bundle is marked end-of-life without a replacement")
     if "ostree.endoflife-rebase" not in keys:
-        return
+        return None
     value = _run(["ostree", "show", "--repo", str(repo), checksum,
                   "--print-metadata-key=ostree.endoflife-rebase"]).decode("utf-8", "strict").strip()
     target = END_OF_LIFE_REBASES.get(app_id)
-    if target is None or value != f"'app/{target}/{architecture}/{channel}'":
+    target_ref = f"app/{target}/{architecture}/{channel}"
+    if target is None or value != f"'{target_ref}'":
         raise ImporterError("bundle end-of-life rebase target is not allowed")
+    return target_ref
 
 
 BASE_AUTH_DIR = "base-auth"
@@ -539,7 +531,7 @@ def verify_stage(repo, work_dir, descriptor, bundle_paths, *, trust_root=None, p
                        for ref in _repo_refs(repo)}
         if staged_refs != expected_refs:
             raise ImporterError("staged repository refs differ from the authenticated base and verified bundles")
-        _require_rebase_targets(repo, inspected, expected_refs)
+        _require_rebase_targets(inspected, expected_refs)
         if _load_imports_ledger(repo) != _updated_ledger(base_ledger, inspected, descriptor):
             raise ImporterError("staged import ledger differs from the authenticated base and verified bundles")
         _verify_repo_config(repo)
@@ -606,7 +598,7 @@ def inspect_bundle(bundle, *, app_id, architecture, channel, version, work_dir=N
         raise ImporterError("bundle contains unexpected or missing refs")
     checksum, metadata = _commit_metadata(repo, expected_ref)
     _validate_tree_paths(repo, checksum)
-    _check_end_of_life(repo, checksum, app_id, architecture, channel)
+    rebase = _check_end_of_life(repo, checksum, app_id, architecture, channel)
     if not metadata.has_section("Application") or metadata.get("Application", "name", fallback="") != app_id:
         raise ImporterError("bundle application ID does not match descriptor")
     runtime = metadata.get("Application", "runtime", fallback="")
@@ -614,7 +606,7 @@ def inspect_bundle(bundle, *, app_id, architecture, channel, version, work_dir=N
     if len(runtime_parts) != 3 or not all(runtime_parts) or runtime_parts[1] != architecture:
         raise ImporterError("bundle runtime metadata is missing")
     return {"ref": expected_ref, "commit": checksum, "runtime": runtime,
-            "version": version, "repo": repo}
+            "version": version, "rebase": rebase, "repo": repo}
 
 
 def _load_imports_ledger(repo):
@@ -697,12 +689,12 @@ def merge_bundles(repo, bundles, descriptor, *, gpg_home=None, signing_fingerpri
             item.pop("repo", None)
             inspected.append(item)
         check_existing_version(repo, inspected, checked)
+        _require_rebase_targets(inspected, _repo_refs(repo))
         changed = [item for item in inspected if not item.get("no_op")]
         for arch, item in zip(ARCHITECTURES, inspected):
             if item.get("no_op"):
                 continue
             _run(["flatpak", "build-import-bundle", "--no-update-summary", str(repo), str(bundles[arch])])
-        _require_rebase_targets(repo, inspected, _repo_refs(repo))
         if changed and sign:
             verify_tmpfs(gpg_home)
             _run(["flatpak", "build-update-repo", "--gpg-sign=" + signing_fingerprint + "!",
