@@ -63,6 +63,16 @@ contract schema. The Flatpak ref, commit and runtime come from inspecting the
 bundles. What this drops compared with the build-time report is a second,
 independent record of the OSTree commit made during the build.
 
+An application that changes its ID retires the old one with an end-of-life
+rebase carried by a release of the old ID: its build is exported with
+`end-of-life-rebase` set, and the mark travels in the commit through import,
+signing and the summary to clients, which then offer to move installs and
+their data to the new ID. The importer refuses a plain end-of-life mark and any
+rebase not listed in `END_OF_LIFE_REBASES` in `tools/flatpak_import.py`, which
+must point at the new ID on the same architecture and channel, so a release
+cannot redirect another application's installs. ZapTide's
+`dev.luminusos.ZapTide` to `org.luminusos.ZapTide` is the only one.
+
 Each application names its release files in `ASSET_NAMES` and `CHECKSUMS_NAMES`
 in `tools/flatpak_import.py`. The checksum file is `checksums.txt` unless the
 application overrides it; DeskUnion publishes `SHA256SUMS.txt`, whose lines must

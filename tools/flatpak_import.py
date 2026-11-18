@@ -304,6 +304,27 @@ def _commit_metadata(repo, ref):
     return checksum, metadata
 
 
+# The only end-of-life rebases a release may carry: an application that
+# changed its ID may point its old ID's installs at the new one, keeping
+# architecture and channel. Anything else would let one release take over
+# another application's installs.
+END_OF_LIFE_REBASES = {"dev.luminusos.ZapTide": "org.luminusos.ZapTide"}
+
+
+def _check_end_of_life(repo, checksum, app_id, architecture, channel):
+    keys = set(_run(["ostree", "show", "--repo", str(repo), checksum,
+                     "--list-metadata-keys"]).decode("utf-8", "strict").split())
+    if "ostree.endoflife" in keys:
+        raise ImporterError("bundle is marked end-of-life without a replacement")
+    if "ostree.endoflife-rebase" not in keys:
+        return
+    value = _run(["ostree", "show", "--repo", str(repo), checksum,
+                  "--print-metadata-key=ostree.endoflife-rebase"]).decode("utf-8", "strict").strip()
+    target = END_OF_LIFE_REBASES.get(app_id)
+    if target is None or value != f"'app/{target}/{architecture}/{channel}'":
+        raise ImporterError("bundle end-of-life rebase target is not allowed")
+
+
 BASE_AUTH_DIR = "base-auth"
 BASE_AUTH_FILES = ("summary", "summary.sig", SUMMARY_DETACHED_SIGNATURE, IMPORTS_LEDGER,
                    IMPORTS_LEDGER + ".sig")
@@ -565,6 +586,7 @@ def inspect_bundle(bundle, *, app_id, architecture, channel, version, work_dir=N
         raise ImporterError("bundle contains unexpected or missing refs")
     checksum, metadata = _commit_metadata(repo, expected_ref)
     _validate_tree_paths(repo, checksum)
+    _check_end_of_life(repo, checksum, app_id, architecture, channel)
     if not metadata.has_section("Application") or metadata.get("Application", "name", fallback="") != app_id:
         raise ImporterError("bundle application ID does not match descriptor")
     runtime = metadata.get("Application", "runtime", fallback="")
